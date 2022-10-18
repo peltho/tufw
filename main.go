@@ -22,12 +22,13 @@ func shellout(command string) (error, string, string) {
 }
 
 type Tui struct {
-	app   *tview.Application
-	form  *tview.Form
-	table *tview.Table
-	menu  *tview.Flex
-	help  *tview.TextView
-	pages *tview.Pages
+	app        *tview.Application
+	form       *tview.Form
+	table      *tview.Table
+	menu       *tview.Flex
+	help       *tview.TextView
+	secondHelp *tview.TextView
+	pages      *tview.Pages
 }
 
 func CreateApplication() *Tui {
@@ -40,6 +41,7 @@ func (t *Tui) Init() {
 	t.form = tview.NewForm()
 	t.menu = tview.NewFlex()
 	t.help = tview.NewTextView()
+	t.secondHelp = tview.NewTextView()
 	t.pages = tview.NewPages()
 }
 
@@ -106,13 +108,23 @@ func (t *Tui) CreateTable(rows []string) {
 		}
 	}).SetSelectedFunc(func(row int, column int) {
 		t.table.SetSelectable(false, false)
+		if row == 0 {
+			t.app.SetFocus(t.table)
+			return
+		}
 		t.CreateModal("Are you sure you want to remove this rule?",
 			func() {
 				shellout(fmt.Sprintf("ufw --force delete %d", row))
-			}, func() {
+			},
+			func() {
 				t.pages.HidePage("modal")
 				t.app.SetFocus(t.table)
-			})
+			},
+			func() {
+				t.pages.HidePage("modal")
+				t.app.SetFocus(t.table)
+			},
+		)
 	})
 }
 
@@ -122,20 +134,18 @@ func (t *Tui) ReloadTable() {
 	t.CreateTable(data)
 }
 
-func (t *Tui) CreateModal(text string, action func(), finally func()) {
+func (t *Tui) CreateModal(text string, confirm func(), cancel func(), finally func()) {
 	modal := tview.NewModal()
 	t.pages.AddPage("modal", modal.SetText(text).AddButtons([]string{"Confirm", "Cancel"}).SetDoneFunc(func(i int, label string) {
 		if label == "Confirm" {
-			action()
+			confirm()
 			t.ReloadTable()
+		} else {
+			cancel()
 		}
 		modal.ClearButtons()
 		finally()
 	}), true, true)
-}
-
-func (t *Tui) CreateHelp(text string) {
-	t.help.SetText(text).SetBorderPadding(1, 0, 1, 0)
 }
 
 func (t *Tui) CreateMenu() {
@@ -147,15 +157,20 @@ func (t *Tui) CreateMenu() {
 		}).
 		AddItem("Remove a rule", "", 'd', func() {
 			t.app.SetFocus(t.table)
-			t.CreateHelp("Press <Esc> to go back to the menu selection")
+			t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
 		}).
 		AddItem("Disable ufw", "", 's', func() {
 			t.CreateModal("Are you sure you want to disable ufw?",
 				func() {
 					shellout("ufw --force disable")
+					t.app.Stop()
 				},
 				func() {
-					t.app.Stop()
+					t.pages.RemovePage("modal")
+					t.app.SetFocus(t.menu)
+				},
+				func() {
+					t.app.SetFocus(t.menu)
 				},
 			)
 		}).
@@ -163,33 +178,46 @@ func (t *Tui) CreateMenu() {
 			t.CreateModal("Are you sure you want to reset all rules?",
 				func() {
 					shellout("ufw --force reset")
+					t.app.Stop()
 				},
 				func() {
-					t.app.Stop()
+					t.app.SetFocus(t.menu)
+				},
+				func() {
+					t.pages.RemovePage("modal")
+					t.app.SetFocus(t.menu)
 				},
 			)
 		}).
 		AddItem("Exit", "", 'q', func() { t.app.Stop() })
-	menuList.SetBorderPadding(1, 0, 1, 1)
+	menuList.SetShortcutColor(tcell.ColorDarkCyan).SetBorderPadding(1, 0, 1, 1)
 	t.menu.AddItem(menuList, 0, 1, true)
 	t.menu.SetBorder(true).SetTitle(" Menu ")
 }
 
 func (t *Tui) CreateForm() {
-	t.CreateHelp("Use <Tab> and <Enter> keys to navigate through the form")
-	t.form.AddInputField("To", "", 20, nil, nil).
+	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
+
+	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddDropDown("Protocol", []string{"tcp", "udp"}, 0, nil).
 		AddDropDown("Action", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
-		AddInputField("From", "", 20, nil, nil).
+		AddInputField("From *", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", t.CreateRule).
-		AddButton("Cancel", t.Cancel)
+		AddButton("Cancel", t.Cancel).
+		SetButtonTextColor(tcell.ColorWhite).
+		SetButtonBackgroundColor(tcell.ColorDarkCyan).
+		SetFieldBackgroundColor(tcell.ColorDarkCyan).
+		SetLabelColor(tcell.ColorWhite)
+
+	t.secondHelp.SetText("* Leave empty for Anywhere").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(1, 0, 1, 1)
 }
 
 func (t *Tui) Reset() {
 	t.pages.HidePage("form")
 	t.form.Clear(true)
 	t.help.Clear()
+	t.secondHelp.Clear()
 	t.app.SetFocus(t.menu)
 }
 
@@ -222,19 +250,20 @@ func (t *Tui) CreateLayout() *tview.Pages {
 
 	base := tview.NewFlex().AddItem(
 		columns.
-			AddItem(t.menu, 0, 1, true).
+			AddItem(t.menu, 0, 2, true).
 			AddItem(t.table, 0, 4, false),
 		0, 1, true,
 	)
 
 	form := columns.AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.help, 0, 1, false).
-		AddItem(t.form, 0, 8, false),
+		AddItem(t.help, 0, 2, false).
+		AddItem(t.form, 0, 8, false).
+		AddItem(t.secondHelp, 0, 2, false),
 		0, 3, false,
 	)
 
 	t.pages.AddAndSwitchToPage("base", base, true)
-	t.pages.AddPage("form", form, false, false)
+	t.pages.AddPage("form", form, true, false)
 	return t.pages
 }
 
@@ -255,10 +284,14 @@ func main() {
 				shellout("ufw --force enable")
 			},
 			func() {
+				tui.app.Stop()
+			},
+			func() {
 				tui.pages.HidePage("modal")
 				tui.pages.ShowPage("base")
 				tui.app.SetFocus(tui.menu)
-			})
+			},
+		)
 	}
 
 	tui.CreateTable(data)
