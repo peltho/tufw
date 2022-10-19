@@ -46,7 +46,7 @@ func (t *Tui) Init() {
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4")
+	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/^(([0-9]{1,3}\\.){3}[0-9])\\s(.*)(\\/[a-z]{3})/\\1\\4 \\3/;s/^(([0-9]*)\\/([a-z]{3}))/\\3 \\2/;s/(\\w)\\s(\\(v6\\))$/\\1\\2/;s/\\(v6\\)//'")
 	if err != nil {
 		log.Printf("error: %v\n", err)
 	}
@@ -59,7 +59,7 @@ func (t *Tui) LoadTableData() ([]string, error) {
 func (t *Tui) CreateTable(rows []string) {
 	t.table.SetFixed(1, 1).SetBorderPadding(1, 0, 1, 1)
 
-	columns := []string{"#", "To", "Action", "From", "Comment"}
+	columns := []string{"#", "To", "Port", "Action", "From", "Comment"}
 
 	for c := 0; c < len(columns); c++ {
 		t.table.SetCell(0, c, tview.NewTableCell(columns[c]).SetTextColor(tcell.ColorDarkCyan).SetAlign(tview.AlignCenter))
@@ -80,9 +80,8 @@ func (t *Tui) CreateTable(rows []string) {
 			if len(cols) < len(columns) && c >= len(cols) {
 				t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
 			} else {
-
 				// Conditional statement for displaying Comments if any
-				if c >= 3 {
+				if c >= 4 {
 					value = strings.Join(cols[c:], " ")
 				} else {
 					value = cols[c]
@@ -199,9 +198,10 @@ func (t *Tui) CreateForm() {
 	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddDropDown("Protocol", []string{"tcp", "udp"}, 0, nil).
-		AddDropDown("Action", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
-		AddInputField("From *", "", 20, nil, nil).
+		AddInputField("Port *", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+		AddDropDown("Protocol *", []string{"tcp", "udp"}, 0, nil).
+		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
+		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", t.CreateRule).
 		AddButton("Cancel", t.Cancel).
@@ -210,7 +210,7 @@ func (t *Tui) CreateForm() {
 		SetFieldBackgroundColor(tcell.ColorDarkCyan).
 		SetLabelColor(tcell.ColorWhite)
 
-	t.secondHelp.SetText("* Leave empty for Anywhere").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(1, 0, 1, 1)
+	t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
 }
 
 func (t *Tui) Reset() {
@@ -223,16 +223,30 @@ func (t *Tui) Reset() {
 
 func (t *Tui) CreateRule() {
 	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
-	_, proto := t.form.GetFormItem(1).(*tview.DropDown).GetCurrentOption()
-	_, action := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	from := t.form.GetFormItem(3).(*tview.InputField).GetText()
-	comment := t.form.GetFormItem(4).(*tview.InputField).GetText()
+	toPort := t.form.GetFormItem(1).(*tview.InputField).GetText()
+	_, proto := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
+	_, action := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
+	from := t.form.GetFormItem(4).(*tview.InputField).GetText()
+	comment := t.form.GetFormItem(5).(*tview.InputField).GetText()
 
-	if to == "" || from == "" {
+	if toPort == "" {
 		return
 	}
 
-	cmd := fmt.Sprintf("ufw %s from %s proto %s to any port %s comment '%s'", strings.ToLower(action), from, proto, to, comment)
+	cmd := ""
+
+	if from == "" && to == "" {
+		cmd = fmt.Sprintf("ufw %s proto %s to any port %s comment '%s'", strings.ToLower(action), proto, toPort, comment)
+	}
+
+	if from == "" && to != "" {
+		cmd = fmt.Sprintf("ufw %s proto %s to %s port %s comment '%s'", strings.ToLower(action), proto, to, toPort, comment)
+	}
+
+	if to == "" && from != "" {
+		cmd = fmt.Sprintf("ufw %s from %s proto %s to any port %s comment '%s'", strings.ToLower(action), from, proto, toPort, comment)
+	}
+
 	err, _, _ := shellout(cmd)
 	if err != nil {
 		log.Print(err)
