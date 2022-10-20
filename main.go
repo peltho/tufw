@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -105,25 +106,6 @@ func (t *Tui) CreateTable(rows []string) {
 			t.help.Clear()
 			t.app.SetFocus(t.menu)
 		}
-	}).SetSelectedFunc(func(row int, column int) {
-		t.table.SetSelectable(false, false)
-		if row == 0 {
-			t.app.SetFocus(t.table)
-			return
-		}
-		t.CreateModal("Are you sure you want to remove this rule?",
-			func() {
-				shellout(fmt.Sprintf("ufw --force delete %d", row))
-			},
-			func() {
-				t.pages.HidePage("modal")
-				t.app.SetFocus(t.table)
-			},
-			func() {
-				t.pages.HidePage("modal")
-				t.app.SetFocus(t.table)
-			},
-		)
 	})
 }
 
@@ -147,6 +129,137 @@ func (t *Tui) CreateModal(text string, confirm func(), cancel func(), finally fu
 	}), true, true)
 }
 
+func (t *Tui) CreateRule(position ...int) {
+	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
+	port := t.form.GetFormItem(1).(*tview.InputField).GetText()
+	_, proto := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
+	_, action := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
+	from := t.form.GetFormItem(4).(*tview.InputField).GetText()
+	comment := t.form.GetFormItem(5).(*tview.InputField).GetText()
+
+	baseCmd := "ufw "
+	if len(position) > 0 && position[0] < t.table.GetRowCount()-1 {
+		baseCmd = fmt.Sprintf("ufw insert %d ", position[0])
+	}
+
+	if port == "" {
+		return
+	}
+
+	cmd := ""
+	if from == "" && to == "" {
+		cmd = fmt.Sprintf("%s proto %s to any port %s comment '%s'", strings.ToLower(action), proto, port, comment)
+	}
+
+	if from == "" && to != "" {
+		cmd = fmt.Sprintf("%s proto %s to %s port %s comment '%s'", strings.ToLower(action), proto, to, port, comment)
+	}
+
+	if to == "" && from != "" {
+		cmd = fmt.Sprintf("%s from %s proto %s to any port %s comment '%s'", strings.ToLower(action), from, proto, port, comment)
+	}
+
+	if to != "" && from != "" {
+		cmd = fmt.Sprintf("%s from %s proto %s to %s port %s comment '%s'", strings.ToLower(action), from, proto, to, port, comment)
+	}
+
+	err, _, _ := shellout(baseCmd + cmd)
+	if err != nil {
+		log.Print(err)
+	}
+	t.Reset()
+	t.ReloadTable()
+}
+
+func (t *Tui) RemoveRule() {
+	t.table.SetSelectedFunc(func(row int, column int) {
+		t.table.SetSelectable(false, false)
+		if row == 0 {
+			t.app.SetFocus(t.table)
+			return
+		}
+		t.CreateModal("Are you sure you want to remove this rule?",
+			func() {
+				shellout(fmt.Sprintf("ufw --force delete %d", row))
+			},
+			func() {
+				t.pages.HidePage("modal")
+				t.app.SetFocus(t.table)
+			},
+			func() {
+				t.pages.HidePage("modal")
+				t.app.SetFocus(t.table)
+			},
+		)
+	})
+}
+
+func (t *Tui) EditForm() {
+	t.table.SetSelectedFunc(func(row int, column int) {
+		if row == 0 {
+			t.app.SetFocus(t.table)
+			return
+		}
+		t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
+
+		to := t.table.GetCell(row, 1).Text
+		re := regexp.MustCompile(`((([0-9]{1,3}\.){3}[0-9]{1,3})/)?([a-z]{3})`)
+		match := re.FindStringSubmatch(to)
+
+		toValue := ""
+		proto := match[0]
+		if match[4] != "" {
+			toValue = match[2]
+			proto = match[4]
+		}
+
+		protocolOptionIndex := 1
+		if proto == "tcp" {
+			protocolOptionIndex = 0
+		}
+
+		actionOptionIndex := 0
+		switch t.table.GetCell(row, 3).Text {
+		case "ALLOW":
+			actionOptionIndex = 0
+		case "DENY":
+			actionOptionIndex = 1
+		case "REJECT":
+			actionOptionIndex = 2
+		case "LIMIT":
+			actionOptionIndex = 3
+		}
+
+		from := t.table.GetCell(row, 4).Text
+		fromValue := from
+		if t.table.GetCell(row, 4).Text == "Anywhere" {
+			fromValue = ""
+		}
+		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
+
+		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddInputField("Port *", t.table.GetCell(row, 2).Text, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddDropDown("Protocol *", []string{"tcp", "udp"}, protocolOptionIndex, nil).
+			AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, actionOptionIndex, nil).
+			AddInputField("From", fromValue, 20, nil, nil).
+			AddInputField("Comment", comment, 40, nil, nil).
+			AddButton("Save", func() { t.CreateRule(row); t.table.SetSelectable(false, false) }).
+			AddButton("Cancel", func() { t.Cancel(); t.table.SetSelectable(false, false) }).
+			SetButtonTextColor(tcell.ColorWhite).
+			SetButtonBackgroundColor(tcell.ColorDarkCyan).
+			SetFieldBackgroundColor(tcell.ColorDarkCyan).
+			SetLabelColor(tcell.ColorWhite)
+
+		shellout(fmt.Sprintf("ufw --force delete %d", row))
+
+		t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").
+			SetTextColor(tcell.ColorDarkCyan).
+			SetBorderPadding(0, 0, 1, 1)
+
+		t.app.SetFocus(t.form)
+	})
+}
+
 func (t *Tui) CreateMenu() {
 	menuList := tview.NewList()
 	menuList.
@@ -154,7 +267,12 @@ func (t *Tui) CreateMenu() {
 			t.CreateForm()
 			t.app.SetFocus(t.form)
 		}).
+		AddItem("Edit a rule", "", 'e', func() {
+			t.EditForm()
+			t.app.SetFocus(t.table)
+		}).
 		AddItem("Remove a rule", "", 'd', func() {
+			t.RemoveRule()
 			t.app.SetFocus(t.table)
 			t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
 		}).
@@ -203,7 +321,7 @@ func (t *Tui) CreateForm() {
 		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
-		AddButton("Save", t.CreateRule).
+		AddButton("Save", func() { t.CreateRule() }).
 		AddButton("Cancel", t.Cancel).
 		SetButtonTextColor(tcell.ColorWhite).
 		SetButtonBackgroundColor(tcell.ColorDarkCyan).
@@ -219,40 +337,6 @@ func (t *Tui) Reset() {
 	t.help.Clear()
 	t.secondHelp.Clear()
 	t.app.SetFocus(t.menu)
-}
-
-func (t *Tui) CreateRule() {
-	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
-	toPort := t.form.GetFormItem(1).(*tview.InputField).GetText()
-	_, proto := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	_, action := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
-	from := t.form.GetFormItem(4).(*tview.InputField).GetText()
-	comment := t.form.GetFormItem(5).(*tview.InputField).GetText()
-
-	if toPort == "" {
-		return
-	}
-
-	cmd := ""
-
-	if from == "" && to == "" {
-		cmd = fmt.Sprintf("ufw %s proto %s to any port %s comment '%s'", strings.ToLower(action), proto, toPort, comment)
-	}
-
-	if from == "" && to != "" {
-		cmd = fmt.Sprintf("ufw %s proto %s to %s port %s comment '%s'", strings.ToLower(action), proto, to, toPort, comment)
-	}
-
-	if to == "" && from != "" {
-		cmd = fmt.Sprintf("ufw %s from %s proto %s to any port %s comment '%s'", strings.ToLower(action), from, proto, toPort, comment)
-	}
-
-	err, _, _ := shellout(cmd)
-	if err != nil {
-		log.Print(err)
-	}
-	t.Reset()
-	t.ReloadTable()
 }
 
 func (t *Tui) Cancel() {
