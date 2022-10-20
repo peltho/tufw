@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -47,11 +48,11 @@ func (t *Tui) Init() {
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/^(([0-9]{1,3}\\.){3}[0-9])\\s(.*)(\\/[a-z]{3})/\\1\\4 \\3/;s/^(([0-9]*)\\/([a-z]{3}))/\\3 \\2/;s/(\\w)\\s(\\(v6\\))$/\\1\\2/;s/\\(v6\\)//'")
+	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s(.*)(\\/[a-z]{3})/\\1\\4 \\3/;s/^(([0-9]*)\\/([a-z]{3}))/\\3 \\2/;s/(\\w)\\s(\\(v6\\))$/\\1\\2/;s/\\(v6\\)//'")
+
 	if err != nil {
 		log.Printf("error: %v\n", err)
 	}
-
 	rows := strings.Split(out, "\n")
 
 	return rows, nil
@@ -78,18 +79,14 @@ func (t *Tui) CreateTable(rows []string) {
 			cols := strings.Fields(row)
 
 			value := ""
-			if len(cols) < len(columns) && c >= len(cols) {
-				t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
-			} else {
-				// Conditional statement for displaying Comments if any
-				if c >= 4 {
-					value = strings.Join(cols[c:], " ")
-				} else {
-					value = cols[c]
-				}
-
-				t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
+			switch {
+			case c >= 4:
+				value = strings.Join(cols[c:], " ")
+			default:
+				value = cols[c]
 			}
+
+			t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
 		}
 	}
 
@@ -203,15 +200,25 @@ func (t *Tui) EditForm() {
 		t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 
 		to := t.table.GetCell(row, 1).Text
-		re := regexp.MustCompile(`((([0-9]{1,3}\.){3}[0-9]{1,3})/)?([a-z]{3})`)
-		match := re.FindStringSubmatch(to)
+		rip := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
+		rproto := regexp.MustCompile(`/?([a-z]{3})`)
+		matchIP := rip.FindStringSubmatch(to)
+		matchProto := rproto.FindStringSubmatch(to)
 
 		toValue := ""
-		proto := match[0]
-		if match[4] != "" {
-			toValue = match[2]
-			proto = match[4]
+		proto := ""
+		if len(matchIP) > 0 {
+			toValue = matchIP[0]
 		}
+		if len(matchProto) > 1 {
+			proto = matchProto[1]
+		}
+
+		portValue := ""
+		port := t.table.GetCell(row, 2).Text
+		rport := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
+		matchPort := rport.FindStringSubmatch(port)
+		portValue = matchPort[1]
 
 		protocolOptionIndex := 1
 		if proto == "tcp" {
@@ -238,13 +245,13 @@ func (t *Tui) EditForm() {
 		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
 
 		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-			AddInputField("Port *", t.table.GetCell(row, 2).Text, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddInputField("Port *", portValue, 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 			AddDropDown("Protocol *", []string{"tcp", "udp"}, protocolOptionIndex, nil).
 			AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, actionOptionIndex, nil).
 			AddInputField("From", fromValue, 20, nil, nil).
 			AddInputField("Comment", comment, 40, nil, nil).
 			AddButton("Save", func() { t.CreateRule(row); t.table.SetSelectable(false, false) }).
-			AddButton("Cancel", func() { t.Cancel(); t.table.SetSelectable(false, false) }).
+			AddButton("Cancel", func() { t.CreateRule(row); t.Reset(); t.table.SetSelectable(false, false) }).
 			SetButtonTextColor(tcell.ColorWhite).
 			SetButtonBackgroundColor(tcell.ColorDarkCyan).
 			SetFieldBackgroundColor(tcell.ColorDarkCyan).
@@ -316,13 +323,13 @@ func (t *Tui) CreateForm() {
 	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddInputField("Port *", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+		AddInputField("Port *", "", 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddDropDown("Protocol *", []string{"tcp", "udp"}, 0, nil).
 		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", func() { t.CreateRule() }).
-		AddButton("Cancel", t.Cancel).
+		AddButton("Cancel", t.Reset).
 		SetButtonTextColor(tcell.ColorWhite).
 		SetButtonBackgroundColor(tcell.ColorDarkCyan).
 		SetFieldBackgroundColor(tcell.ColorDarkCyan).
@@ -331,16 +338,17 @@ func (t *Tui) CreateForm() {
 	t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
 }
 
+func validatePort(text string, ch rune) bool {
+	_, err := strconv.Atoi(text)
+	return err == nil
+}
+
 func (t *Tui) Reset() {
 	t.pages.HidePage("form")
 	t.form.Clear(true)
 	t.help.Clear()
 	t.secondHelp.Clear()
 	t.app.SetFocus(t.menu)
-}
-
-func (t *Tui) Cancel() {
-	t.Reset()
 }
 
 func (t *Tui) CreateLayout() *tview.Pages {
@@ -377,7 +385,7 @@ func main() {
 
 	if len(data) <= 1 {
 		tui.pages.HidePage("base")
-		tui.CreateModal("ufw is disabled. Do you want to enable it?",
+		tui.CreateModal("ufw is disabled.\nDo you want to enable it?",
 			func() {
 				shellout("ufw --force enable")
 			},
