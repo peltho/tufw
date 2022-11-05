@@ -47,8 +47,16 @@ func (t *Tui) Init() {
 	t.pages = tview.NewPages()
 }
 
+func (t *Tui) LoadInterfaces() ([]string, error) {
+	err, out, _ := shellout("ip link show | awk -F: '{ print $2 }' | sed -r 's/^[0-9]+//' | sed '/^$/d' | awk '{$2=$2};1'")
+	if err != nil {
+		log.Printf("error: %v\n", err)
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s(.*)(\\/[a-z]{3})/\\1\\4 \\3/;s/^(([0-9]*)\\/([a-z]{3}))/\\3 \\2/;s/(\\w)\\s(\\(v6\\))$/\\1\\2/;s/\\(v6\\)//'")
+	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)(\\/[a-z]{3})/\\1\\5 \\2\\3 \\4/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^(.*)\\s(([0-9]+)\\/([a-z]{3}))/\\1\\/\\4 \\3/;s/(^[0-9]+)\\/([a-z]{3})/\\2 \\1/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/'")
 
 	if err != nil {
 		log.Printf("error: %v\n", err)
@@ -80,10 +88,12 @@ func (t *Tui) CreateTable(rows []string) {
 
 			value := ""
 			switch {
+			case len(cols) < len(columns) && c >= len(cols):
+				value = ""
 			case c >= 4:
-				value = strings.Join(cols[c:], " ")
+				value = strings.ReplaceAll(strings.Join(cols[c:], " "), "#", "")
 			default:
-				value = cols[c]
+				value = strings.ReplaceAll(cols[c], "-", " ")
 			}
 
 			t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
@@ -126,43 +136,208 @@ func (t *Tui) CreateModal(text string, confirm func(), cancel func(), finally fu
 	}), true, true)
 }
 
+func (t *Tui) CreateForm() {
+	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
+	interfaces, _ := t.LoadInterfaces()
+
+	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+		AddInputField("Port", "", 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
+		AddDropDown("Interface", interfaces, len(interfaces), nil).
+		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
+		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, 0, nil).
+		AddInputField("From", "", 20, nil, nil).
+		AddInputField("Comment", "", 40, nil, nil).
+		AddButton("Save", func() { t.CreateRule() }).
+		AddButton("Cancel", t.Reset).
+		SetButtonTextColor(tcell.ColorWhite).
+		SetButtonBackgroundColor(tcell.ColorDarkCyan).
+		SetFieldBackgroundColor(tcell.ColorDarkCyan).
+		SetLabelColor(tcell.ColorWhite)
+
+	t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
+}
+
+func validatePort(text string, ch rune) bool {
+	_, err := strconv.Atoi(text)
+	return err == nil
+}
+
+func (t *Tui) EditForm() {
+	t.table.SetSelectedFunc(func(row int, column int) {
+		if row == 0 {
+			t.app.SetFocus(t.table)
+			return
+		}
+		t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
+		interfaces, _ := t.LoadInterfaces()
+
+		to := t.table.GetCell(row, 1).Text
+		rip := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
+		rproto := regexp.MustCompile(`/?([a-z]{3})`)
+		matchIP := rip.FindStringSubmatch(to)
+		matchProto := rproto.FindStringSubmatch(to)
+
+		toValue := ""
+		proto := ""
+		if len(matchIP) > 0 {
+			toValue = matchIP[0]
+		}
+		if len(matchProto) > 1 {
+			proto = matchProto[1]
+		}
+
+		portValue := ""
+		port := t.table.GetCell(row, 2).Text
+		rport := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
+		matchPort := rport.FindStringSubmatch(port)
+		portValue = matchPort[1]
+
+		interfaceOptionIndex := len(interfaces)
+
+		protocolOptionIndex := 0
+		switch proto {
+		case "tcp":
+			protocolOptionIndex = 1
+		case "udp":
+			protocolOptionIndex = 2
+		default:
+			protocolOptionIndex = 0
+		}
+
+		actionOptionIndex := 0
+		switch t.table.GetCell(row, 3).Text {
+		case "ALLOW":
+			actionOptionIndex = 0
+		case "DENY":
+			actionOptionIndex = 1
+		case "REJECT":
+			actionOptionIndex = 2
+		case "LIMIT":
+			actionOptionIndex = 3
+		case "ALLOW-OUT":
+			actionOptionIndex = 4
+		case "DENY-OUT":
+			actionOptionIndex = 5
+		case "REJECT-OUT":
+			actionOptionIndex = 6
+		case "LIMIT-OUT":
+			actionOptionIndex = 7
+		}
+
+		from := t.table.GetCell(row, 4).Text
+		fromValue := from
+		if t.table.GetCell(row, 4).Text == "Anywhere" {
+			fromValue = ""
+		}
+		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
+
+		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddInputField("Port", portValue, 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddDropDown("Interface", interfaces, interfaceOptionIndex, nil).
+			AddDropDown("Protocol", []string{"", "tcp", "udp"}, protocolOptionIndex, nil).
+			AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, actionOptionIndex, nil).
+			AddInputField("From", fromValue, 20, nil, nil).
+			AddInputField("Comment", comment, 40, nil, nil).
+			AddButton("Save", func() {
+				t.CreateRule(row)
+				t.table.SetSelectable(false, false)
+			}).
+			AddButton("Cancel", func() {
+				t.Reset()
+				t.table.SetSelectable(false, false)
+			}).
+			SetButtonTextColor(tcell.ColorWhite).
+			SetButtonBackgroundColor(tcell.ColorDarkCyan).
+			SetFieldBackgroundColor(tcell.ColorDarkCyan).
+			SetLabelColor(tcell.ColorWhite)
+
+		t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").
+			SetTextColor(tcell.ColorDarkCyan).
+			SetBorderPadding(0, 0, 1, 1)
+
+		t.app.SetFocus(t.form)
+	})
+}
+
 func (t *Tui) CreateRule(position ...int) {
 	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
 	port := t.form.GetFormItem(1).(*tview.InputField).GetText()
-	_, proto := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	_, action := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
-	from := t.form.GetFormItem(4).(*tview.InputField).GetText()
-	comment := t.form.GetFormItem(5).(*tview.InputField).GetText()
+	_, ninterface := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
+	_, proto := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
+	_, action := t.form.GetFormItem(4).(*tview.DropDown).GetCurrentOption()
+	from := t.form.GetFormItem(5).(*tview.InputField).GetText()
+	comment := t.form.GetFormItem(6).(*tview.InputField).GetText()
 
+	dryCmd := "ufw --dry-run "
 	baseCmd := "ufw "
 	if len(position) > 0 && position[0] < t.table.GetRowCount()-1 {
+		dryCmd = fmt.Sprintf("ufw --dry-run insert %d ", position[0])
 		baseCmd = fmt.Sprintf("ufw insert %d ", position[0])
 	}
 
-	if port == "" {
+	if port != "" && ninterface != "" {
 		return
 	}
 
+	if proto != "" && (from == "" || to == "") {
+		return
+	}
+
+	if port != "" && (from == "" || to == "") {
+		return
+	}
+
+	if (proto == "" || port == "") && from == "" && to == "" && ninterface == "" {
+		return
+	}
+
+	toValue := to
+	if to == "" {
+		toValue = "any"
+	}
+	fromValue := from
+	if from == "" {
+		fromValue = "any"
+	}
+
 	cmd := ""
-	if from == "" && to == "" {
-		cmd = fmt.Sprintf("%s proto %s to any port %s comment '%s'", strings.ToLower(action), proto, port, comment)
+	preCmd := fmt.Sprintf("%s ", strings.ToLower(action))
+	if ninterface != "" {
+		preCmd = fmt.Sprintf("%s on %s ", strings.ToLower(action), ninterface)
 	}
 
-	if from == "" && to != "" {
-		cmd = fmt.Sprintf("%s proto %s to %s port %s comment '%s'", strings.ToLower(action), proto, to, port, comment)
+	if port != "" && proto == "" {
+		cmd = fmt.Sprintf("%s to %s port %s comment '%s'", fromValue, toValue, port, comment)
+	}
+	if port == "" && proto != "" {
+		cmd = fmt.Sprintf("%s proto %s to %s comment '%s'", fromValue, proto, toValue, comment)
+	}
+	if port != "" && proto != "" {
+		cmd = fmt.Sprintf("%s proto %s to %s port %s comment '%s'", fromValue, proto, toValue, port, comment)
+	}
+	if port == "" && proto == "" {
+		cmd = fmt.Sprintf("%s to %s comment '%s'", fromValue, toValue, comment)
+	}
+	if ninterface != "" && (to == "" || from == "") {
+		cmd = fmt.Sprintf("comment '%s'", comment)
 	}
 
-	if to == "" && from != "" {
-		cmd = fmt.Sprintf("%s from %s proto %s to any port %s comment '%s'", strings.ToLower(action), from, proto, port, comment)
-	}
+	// Dry-run
+	err, _, _ := shellout(dryCmd + preCmd + cmd)
+	if err == nil {
+		// Delete first
+		if len(position) > 0 {
+			shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
+		}
 
-	if to != "" && from != "" {
-		cmd = fmt.Sprintf("%s from %s proto %s to %s port %s comment '%s'", strings.ToLower(action), from, proto, to, port, comment)
+		// Then create
+		err, _, _ = shellout(baseCmd + preCmd + cmd)
+		if err != nil {
+			log.Print(err)
+		}
 	}
-
-	err, _, _ := shellout(baseCmd + cmd)
 	if err != nil {
-		log.Print(err)
+		return
 	}
 	t.Reset()
 	t.ReloadTable()
@@ -188,82 +363,6 @@ func (t *Tui) RemoveRule() {
 				t.app.SetFocus(t.table)
 			},
 		)
-	})
-}
-
-func (t *Tui) EditForm() {
-	t.table.SetSelectedFunc(func(row int, column int) {
-		if row == 0 {
-			t.app.SetFocus(t.table)
-			return
-		}
-		t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
-
-		to := t.table.GetCell(row, 1).Text
-		rip := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
-		rproto := regexp.MustCompile(`/?([a-z]{3})`)
-		matchIP := rip.FindStringSubmatch(to)
-		matchProto := rproto.FindStringSubmatch(to)
-
-		toValue := ""
-		proto := ""
-		if len(matchIP) > 0 {
-			toValue = matchIP[0]
-		}
-		if len(matchProto) > 1 {
-			proto = matchProto[1]
-		}
-
-		portValue := ""
-		port := t.table.GetCell(row, 2).Text
-		rport := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
-		matchPort := rport.FindStringSubmatch(port)
-		portValue = matchPort[1]
-
-		protocolOptionIndex := 1
-		if proto == "tcp" {
-			protocolOptionIndex = 0
-		}
-
-		actionOptionIndex := 0
-		switch t.table.GetCell(row, 3).Text {
-		case "ALLOW":
-			actionOptionIndex = 0
-		case "DENY":
-			actionOptionIndex = 1
-		case "REJECT":
-			actionOptionIndex = 2
-		case "LIMIT":
-			actionOptionIndex = 3
-		}
-
-		from := t.table.GetCell(row, 4).Text
-		fromValue := from
-		if t.table.GetCell(row, 4).Text == "Anywhere" {
-			fromValue = ""
-		}
-		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
-
-		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-			AddInputField("Port *", portValue, 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
-			AddDropDown("Protocol *", []string{"tcp", "udp"}, protocolOptionIndex, nil).
-			AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, actionOptionIndex, nil).
-			AddInputField("From", fromValue, 20, nil, nil).
-			AddInputField("Comment", comment, 40, nil, nil).
-			AddButton("Save", func() { t.CreateRule(row); t.table.SetSelectable(false, false) }).
-			AddButton("Cancel", func() { t.CreateRule(row); t.Reset(); t.table.SetSelectable(false, false) }).
-			SetButtonTextColor(tcell.ColorWhite).
-			SetButtonBackgroundColor(tcell.ColorDarkCyan).
-			SetFieldBackgroundColor(tcell.ColorDarkCyan).
-			SetLabelColor(tcell.ColorWhite)
-
-		shellout(fmt.Sprintf("ufw --force delete %d", row))
-
-		t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").
-			SetTextColor(tcell.ColorDarkCyan).
-			SetBorderPadding(0, 0, 1, 1)
-
-		t.app.SetFocus(t.form)
 	})
 }
 
@@ -317,30 +416,6 @@ func (t *Tui) CreateMenu() {
 	menuList.SetShortcutColor(tcell.ColorDarkCyan).SetBorderPadding(1, 0, 1, 1)
 	t.menu.AddItem(menuList, 0, 1, true)
 	t.menu.SetBorder(true).SetTitle(" Menu ")
-}
-
-func (t *Tui) CreateForm() {
-	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
-
-	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddInputField("Port *", "", 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddDropDown("Protocol *", []string{"tcp", "udp"}, 0, nil).
-		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT"}, 0, nil).
-		AddInputField("From", "", 20, nil, nil).
-		AddInputField("Comment", "", 40, nil, nil).
-		AddButton("Save", func() { t.CreateRule() }).
-		AddButton("Cancel", t.Reset).
-		SetButtonTextColor(tcell.ColorWhite).
-		SetButtonBackgroundColor(tcell.ColorDarkCyan).
-		SetFieldBackgroundColor(tcell.ColorDarkCyan).
-		SetLabelColor(tcell.ColorWhite)
-
-	t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
-}
-
-func validatePort(text string, ch rune) bool {
-	_, err := strconv.Atoi(text)
-	return err == nil
 }
 
 func (t *Tui) Reset() {
