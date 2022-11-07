@@ -56,7 +56,7 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)(\\/[a-z]{3})/\\1\\5 \\2\\3 \\4/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^(.*)\\s(([0-9]+)\\/([a-z]{3}))/\\1\\/\\4 \\3/;s/(^[0-9]+)\\/([a-z]{3})/\\2 \\1/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/'")
+	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/^([0-9]+)\\s([A-Z]{2,}(-[A-Z]{2,3})?)/- \\1 \\2/;s/^(.*)\\s([0-9]+)\\/([a-z]{3})/\\1\\/\\3 \\2/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([0-9]+)\\/([a-z]{3})/\\2 \\1/;s/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s([A-Z]+)/\\1 - \\3/;s/^(\\w+)\\s([A-Z]+)/\\1 - \\2/'")
 
 	if err != nil {
 		log.Printf("error: %v\n", err)
@@ -93,7 +93,7 @@ func (t *Tui) CreateTable(rows []string) {
 			case c >= 4:
 				value = strings.ReplaceAll(strings.Join(cols[c:], " "), "#", "")
 			default:
-				value = strings.ReplaceAll(cols[c], "-", " ")
+				value = strings.ReplaceAll(cols[c], "_", " ")
 			}
 
 			t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
