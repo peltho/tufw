@@ -56,7 +56,8 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/^([0-9]+)\\s([A-Z]{2,}(-[A-Z]{2,3})?)/- \\1 \\2/;s/^(.*)\\s([0-9]+)\\/([a-z]{3})/\\1\\/\\3 \\2/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([0-9]+)\\/([a-z]{3})/\\2 \\1/;s/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s([A-Z]+)/\\1 - \\3/;s/^(\\w+)\\s([A-Z]+)/\\1 - \\2/'")
+	//err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/^([0-9]+)\\s([A-Z]{2,}(-[A-Z]{2,3})?)/- \\1 \\2/;s/^(.*)\\s([0-9]+)\\/([a-z]{3})/\\1\\/\\3 \\2/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([0-9]+)\\/([a-z]{3})/\\2 \\1/;s/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s([A-Z]+)/\\1 - \\3/;s/^(\\w+)\\s([A-Z]+)/\\1 - \\2/'")
+	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6- \\2 \\4/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
 
 	if err != nil {
 		log.Printf("error: %v\n", err)
@@ -73,7 +74,7 @@ func (t *Tui) CreateTable(rows []string) {
 
 	for c := 0; c < len(columns); c++ {
 		t.table.SetCell(0, c, tview.NewTableCell(columns[c]).SetTextColor(tcell.ColorDarkCyan).SetAlign(tview.AlignCenter))
-		if c >= len(columns)-1 {
+		if c >= len(columns) {
 			break
 		}
 
@@ -82,21 +83,20 @@ func (t *Tui) CreateTable(rows []string) {
 				break
 			}
 
-			t.table.SetCell(r+1, 0, tview.NewTableCell(fmt.Sprintf("[%d]", r+1)).SetTextColor(tcell.ColorDarkCyan).SetAlign(tview.AlignCenter).SetExpansion(1))
-
 			cols := strings.Fields(row)
-
+			alignment := tview.AlignCenter
 			value := ""
 			switch {
 			case len(cols) < len(columns) && c >= len(cols):
 				value = ""
-			case c >= 4:
+			case c >= 5:
 				value = strings.ReplaceAll(strings.Join(cols[c:], " "), "#", "")
+				alignment = tview.AlignLeft
 			default:
 				value = strings.ReplaceAll(cols[c], "_", " ")
 			}
 
-			t.table.SetCell(r+1, c+1, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(tview.AlignCenter).SetExpansion(1))
+			t.table.SetCell(r+1, c, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(alignment).SetExpansion(1))
 		}
 	}
 
@@ -144,7 +144,7 @@ func (t *Tui) CreateForm() {
 		AddInputField("Port", "", 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddDropDown("Interface", interfaces, len(interfaces), nil).
 		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
-		AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, 0, nil).
+		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", func() { t.CreateRule() }).
@@ -154,12 +154,65 @@ func (t *Tui) CreateForm() {
 		SetFieldBackgroundColor(tcell.ColorDarkCyan).
 		SetLabelColor(tcell.ColorWhite)
 
-	t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
+	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
 }
 
 func validatePort(text string, ch rune) bool {
 	_, err := strconv.Atoi(text)
 	return err == nil
+}
+
+func parseIPAddress(input string) string {
+	r := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
+	matches := r.FindStringSubmatch(input)
+	value := ""
+	if len(matches) > 0 {
+		value = matches[0]
+	}
+	return value
+}
+
+func parseProtocol(inputs ...string) string {
+	r := regexp.MustCompile(`/?(tcp|udp)`)
+	value := ""
+	for _, input := range inputs {
+		matches := r.FindStringSubmatch(input)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+
+	return value
+}
+
+func parsePort(input string) string {
+	r := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
+	value := ""
+	matches := r.FindStringSubmatch(input)
+	if len(matches) > 0 {
+		value = matches[1]
+	}
+
+	return value
+}
+
+func parseInterfaceIndex(input string, interfaces []string) int {
+	r := regexp.MustCompile(`.* on (.+)`)
+	matches := r.FindStringSubmatch(input)
+	index := len(interfaces)
+
+	if len(matches) == 0 {
+		return index
+	}
+
+	for i, interfaceValue := range interfaces {
+		if matches[1] == interfaceValue {
+			fmt.Println(i)
+			return i
+		}
+	}
+
+	return index
 }
 
 func (t *Tui) EditForm() {
@@ -172,28 +225,12 @@ func (t *Tui) EditForm() {
 		interfaces, _ := t.LoadInterfaces()
 
 		to := t.table.GetCell(row, 1).Text
-		rip := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
-		rproto := regexp.MustCompile(`/?([a-z]{3})`)
-		matchIP := rip.FindStringSubmatch(to)
-		matchProto := rproto.FindStringSubmatch(to)
+		from := t.table.GetCell(row, 4).Text
 
-		toValue := ""
-		proto := ""
-		if len(matchIP) > 0 {
-			toValue = matchIP[0]
-		}
-		if len(matchProto) > 1 {
-			proto = matchProto[1]
-		}
+		toValue := parseIPAddress(to)
+		fromValue := parseIPAddress(from)
 
-		portValue := ""
-		port := t.table.GetCell(row, 2).Text
-		rport := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
-		matchPort := rport.FindStringSubmatch(port)
-		portValue = matchPort[1]
-
-		interfaceOptionIndex := len(interfaces)
-
+		proto := parseProtocol(to, from)
 		protocolOptionIndex := 0
 		switch proto {
 		case "tcp":
@@ -204,15 +241,19 @@ func (t *Tui) EditForm() {
 			protocolOptionIndex = 0
 		}
 
+		portValue := parsePort(t.table.GetCell(row, 2).Text)
+
+		interfaceOptionIndex := parseInterfaceIndex(to, interfaces)
+
 		actionOptionIndex := 0
 		switch t.table.GetCell(row, 3).Text {
-		case "ALLOW":
+		case "ALLOW-IN":
 			actionOptionIndex = 0
-		case "DENY":
+		case "DENY-IN":
 			actionOptionIndex = 1
-		case "REJECT":
+		case "REJECT-IN":
 			actionOptionIndex = 2
-		case "LIMIT":
+		case "LIMIT-IN":
 			actionOptionIndex = 3
 		case "ALLOW-OUT":
 			actionOptionIndex = 4
@@ -224,18 +265,13 @@ func (t *Tui) EditForm() {
 			actionOptionIndex = 7
 		}
 
-		from := t.table.GetCell(row, 4).Text
-		fromValue := from
-		if t.table.GetCell(row, 4).Text == "Anywhere" {
-			fromValue = ""
-		}
 		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
 
 		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 			AddInputField("Port", portValue, 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 			AddDropDown("Interface", interfaces, interfaceOptionIndex, nil).
 			AddDropDown("Protocol", []string{"", "tcp", "udp"}, protocolOptionIndex, nil).
-			AddDropDown("Action *", []string{"ALLOW", "DENY", "REJECT", "LIMIT", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, actionOptionIndex, nil).
+			AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, actionOptionIndex, nil).
 			AddInputField("From", fromValue, 20, nil, nil).
 			AddInputField("Comment", comment, 40, nil, nil).
 			AddButton("Save", func() {
@@ -251,7 +287,7 @@ func (t *Tui) EditForm() {
 			SetFieldBackgroundColor(tcell.ColorDarkCyan).
 			SetLabelColor(tcell.ColorWhite)
 
-		t.secondHelp.SetText("* Mandatory field\n\nTo and From fields match any and Anywhere if left empty").
+		t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
 			SetTextColor(tcell.ColorDarkCyan).
 			SetBorderPadding(0, 0, 1, 1)
 
@@ -279,15 +315,11 @@ func (t *Tui) CreateRule(position ...int) {
 		return
 	}
 
-	if proto != "" && (from == "" || to == "") {
+	if port == "" && proto == "" && ninterface == "" {
 		return
 	}
 
-	if port != "" && (from == "" || to == "") {
-		return
-	}
-
-	if (proto == "" || port == "") && from == "" && to == "" && ninterface == "" {
+	if ninterface != "" && proto != "" {
 		return
 	}
 
@@ -301,9 +333,9 @@ func (t *Tui) CreateRule(position ...int) {
 	}
 
 	cmd := ""
-	preCmd := fmt.Sprintf("%s ", strings.ToLower(action))
+	preCmd := fmt.Sprintf("%s from ", strings.ToLower(action))
 	if ninterface != "" {
-		preCmd = fmt.Sprintf("%s on %s ", strings.ToLower(action), ninterface)
+		preCmd = fmt.Sprintf("%s on %s from ", strings.ToLower(action), ninterface)
 	}
 
 	if port != "" && proto == "" {
@@ -318,11 +350,12 @@ func (t *Tui) CreateRule(position ...int) {
 	if port == "" && proto == "" {
 		cmd = fmt.Sprintf("%s to %s comment '%s'", fromValue, toValue, comment)
 	}
-	if ninterface != "" && (to == "" || from == "") {
-		cmd = fmt.Sprintf("comment '%s'", comment)
+	if ninterface != "" && to == "" {
+		cmd = fmt.Sprintf("%s comment '%s'", fromValue, comment)
 	}
 
 	// Dry-run
+	//fmt.Println(dryCmd + preCmd + cmd) // debugging
 	err, _, _ := shellout(dryCmd + preCmd + cmd)
 	if err == nil {
 		// Delete first
@@ -337,6 +370,7 @@ func (t *Tui) CreateRule(position ...int) {
 		}
 	}
 	if err != nil {
+		log.Print(err)
 		return
 	}
 	t.Reset()
