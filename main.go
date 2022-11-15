@@ -13,6 +13,8 @@ import (
 	"github.com/rivo/tview"
 )
 
+var NUMBER_OF_V6_RULES = 0
+
 func shellout(command string) (error, string, string) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -60,6 +62,10 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 
 func (t *Tui) LoadTableData() ([]string, error) {
 	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
+
+	r := regexp.MustCompile(`\(v6\)`)
+	matches := r.FindAllStringSubmatch(out, -1)
+	NUMBER_OF_V6_RULES = len(matches)
 
 	if err != nil {
 		log.Printf("error: %v\n", err)
@@ -150,7 +156,10 @@ func (t *Tui) CreateForm() {
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", func() { t.CreateRule() }).
-		AddButton("Cancel", t.Reset).
+		AddButton("Cancel", func() {
+			t.Reset()
+			t.app.SetFocus(t.menu)
+		}).
 		SetButtonTextColor(tcell.ColorWhite).
 		SetButtonBackgroundColor(tcell.ColorDarkCyan).
 		SetFieldBackgroundColor(tcell.ColorDarkCyan).
@@ -276,20 +285,21 @@ func (t *Tui) EditForm() {
 			AddInputField("Comment", comment, 40, nil, nil).
 			AddButton("Save", func() {
 				t.CreateRule(row)
-				t.table.SetSelectable(false, false)
+				t.app.SetFocus(t.table)
 			}).
 			AddButton("Cancel", func() {
 				t.Reset()
-				t.table.SetSelectable(false, false)
+				t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
+				t.app.SetFocus(t.table)
 			}).
 			SetButtonTextColor(tcell.ColorWhite).
 			SetButtonBackgroundColor(tcell.ColorDarkCyan).
 			SetFieldBackgroundColor(tcell.ColorDarkCyan).
 			SetLabelColor(tcell.ColorWhite)
 
-		/*t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
-		SetTextColor(tcell.ColorDarkCyan).
-		SetBorderPadding(0, 0, 1, 1)*/
+		t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
+			SetTextColor(tcell.ColorDarkCyan).
+			SetBorderPadding(0, 0, 1, 1)
 
 		t.app.SetFocus(t.form)
 	})
@@ -306,20 +316,17 @@ func (t *Tui) CreateRule(position ...int) {
 
 	dryCmd := "ufw --dry-run "
 	baseCmd := "ufw "
-	if len(position) > 0 && position[0] < t.table.GetRowCount()-1 {
+
+	if len(position) > 0 && position[0] < t.table.GetRowCount()-NUMBER_OF_V6_RULES-1 {
 		dryCmd = fmt.Sprintf("ufw --dry-run insert %d ", position[0])
 		baseCmd = fmt.Sprintf("ufw insert %d ", position[0])
 	}
 
-	if port != "" && ninterface != "" {
+	if ninterface != "" && (port != "" || proto != "") {
 		return
 	}
 
-	if port == "" && proto == "" && ninterface == "" {
-		return
-	}
-
-	if ninterface != "" && proto != "" {
+	if port == "" && proto == "" && ninterface == "" && to == "" && from == "" {
 		return
 	}
 
@@ -355,7 +362,6 @@ func (t *Tui) CreateRule(position ...int) {
 	}
 
 	// Dry-run
-	//fmt.Println(dryCmd + preCmd + cmd) // debugging
 	err, _, _ := shellout(dryCmd + preCmd + cmd)
 	if err == nil {
 		// Delete first
@@ -410,6 +416,7 @@ func (t *Tui) CreateMenu() {
 		AddItem("Edit a rule", "", 'e', func() {
 			t.EditForm()
 			t.app.SetFocus(t.table)
+			t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
 		}).
 		AddItem("Delete a rule", "", 'd', func() {
 			t.RemoveRule()
@@ -457,7 +464,6 @@ func (t *Tui) Reset() {
 	t.form.Clear(true)
 	t.help.Clear()
 	t.secondHelp.Clear()
-	t.app.SetFocus(t.menu)
 }
 
 func (t *Tui) CreateLayout() *tview.Pages {
@@ -483,6 +489,14 @@ func (t *Tui) CreateLayout() *tview.Pages {
 }
 
 func main() {
+
+	cmd := exec.Command("id", "-u")
+	output, err := cmd.Output()
+	i, err := strconv.Atoi(string(output[:len(output)-1]))
+	if i != 0 {
+		log.Fatal("This program must be run as root! (sudo)")
+	}
+
 	tui := CreateApplication()
 	tui.Init()
 	data, err := tui.LoadTableData()
