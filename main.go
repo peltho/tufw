@@ -52,12 +52,14 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 	if err != nil {
 		log.Printf("error: %v\n", err)
 	}
-	return strings.Split(out, "\n"), nil
+
+	interfaces := append(strings.Fields(out), "")
+
+	return interfaces, nil
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	//err, out, _ := shellout("ufw status | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6 - \\2 \\4/;s/^([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/^([0-9]+)\\s([A-Z]{2,}(-[A-Z]{2,3})?)/- \\1 \\2/;s/^(.*)\\s([0-9]+)\\/([a-z]{3})/\\1\\/\\3 \\2/;s/(\\w+)\\s(on)\\s(\\w+)/\\1-\\2-\\3 -/;s/^([0-9]+)\\/([a-z]{3})/\\2 \\1/;s/^(([0-9]{1,3}\\.){3}[0-9]{1,3})\\s([A-Z]+)/\\1 - \\3/;s/^(\\w+)\\s([A-Z]+)/\\1 - \\2/'")
-	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)#?/\\1_\\5_\\6- \\2 \\4/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
+	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
 
 	if err != nil {
 		log.Printf("error: %v\n", err)
@@ -197,9 +199,9 @@ func parsePort(input string) string {
 }
 
 func parseInterfaceIndex(input string, interfaces []string) int {
-	r := regexp.MustCompile(`.* on (.+)`)
-	matches := r.FindStringSubmatch(input)
-	index := len(interfaces)
+	r := regexp.MustCompile(`.+ on (.+)`)
+	matches := r.FindStringSubmatch(strings.TrimSpace(input))
+	index := len(interfaces) - 1
 
 	if len(matches) == 0 {
 		return index
@@ -207,7 +209,6 @@ func parseInterfaceIndex(input string, interfaces []string) int {
 
 	for i, interfaceValue := range interfaces {
 		if matches[1] == interfaceValue {
-			fmt.Println(i)
 			return i
 		}
 	}
@@ -242,7 +243,6 @@ func (t *Tui) EditForm() {
 		}
 
 		portValue := parsePort(t.table.GetCell(row, 2).Text)
-
 		interfaceOptionIndex := parseInterfaceIndex(to, interfaces)
 
 		actionOptionIndex := 0
@@ -287,9 +287,9 @@ func (t *Tui) EditForm() {
 			SetFieldBackgroundColor(tcell.ColorDarkCyan).
 			SetLabelColor(tcell.ColorWhite)
 
-		t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
-			SetTextColor(tcell.ColorDarkCyan).
-			SetBorderPadding(0, 0, 1, 1)
+		/*t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
+		SetTextColor(tcell.ColorDarkCyan).
+		SetBorderPadding(0, 0, 1, 1)*/
 
 		t.app.SetFocus(t.form)
 	})
@@ -411,7 +411,7 @@ func (t *Tui) CreateMenu() {
 			t.EditForm()
 			t.app.SetFocus(t.table)
 		}).
-		AddItem("Remove a rule", "", 'd', func() {
+		AddItem("Delete a rule", "", 'd', func() {
 			t.RemoveRule()
 			t.app.SetFocus(t.table)
 			t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
