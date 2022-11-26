@@ -22,5 +22,5 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
-	service.CreateApplication().Build(data)
+	tui.Build(data)
 }

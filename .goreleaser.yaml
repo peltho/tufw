@@ -7,7 +7,8 @@ before:
     # you may remove this if you don't need go generate
     - go generate ./...
 builds:
-  - env:
+  - main: ./cmd/tufw/main.go
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -24,6 +25,18 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+nfpms:
+  - 
+    id: packages
+    homepage: https://github.com/peltho/tufw
+    maintainer: Thomas Pellegatta <pellegatta.thomas@gmail.com>
+    description: "A terminal user interface for ufw"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    dependencies:
+      - ufw
 
 # modelines, feel free to remove those if you don't want/use them:
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
