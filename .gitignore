@@ -13,4 +13,8 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
-tufw
+^tufw
+dist/
+
+# IDE
+.idea/

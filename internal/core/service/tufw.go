@@ -1,29 +1,17 @@
-package main
+package service
 
 import (
-	"bytes"
 	"fmt"
 	"log"
-	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/peltho/tufw/internal/core/utils"
 	"github.com/rivo/tview"
 )
 
 var NUMBER_OF_V6_RULES = 0
-
-func shellout(command string) (error, string, string) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := exec.Command("bash", "-c", command)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return err, stdout.String(), stderr.String()
-}
 
 type Tui struct {
 	app        *tview.Application
@@ -50,7 +38,7 @@ func (t *Tui) Init() {
 }
 
 func (t *Tui) LoadInterfaces() ([]string, error) {
-	err, out, _ := shellout("ip link show | awk -F: '{ print $2 }' | sed -r 's/^[0-9]+//' | sed '/^$/d' | awk '{$2=$2};1'")
+	err, out, _ := utils.Shellout("ip link show | awk -F: '{ print $2 }' | sed -r 's/^[0-9]+//' | sed '/^$/d' | awk '{$2=$2};1'")
 	if err != nil {
 		log.Printf("error: %v\n", err)
 	}
@@ -61,7 +49,7 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 }
 
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
+	err, out, _ := utils.Shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
 
 	r := regexp.MustCompile(`\(v6\)`)
 	matches := r.FindAllStringSubmatch(out, -1)
@@ -149,7 +137,7 @@ func (t *Tui) CreateForm() {
 	interfaces, _ := t.LoadInterfaces()
 
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddInputField("Port", "", 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
+		AddInputField("Port", "", 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddDropDown("Interface", interfaces, len(interfaces), nil).
 		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
 		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, 0, nil).
@@ -168,63 +156,6 @@ func (t *Tui) CreateForm() {
 	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
 }
 
-func validatePort(text string, ch rune) bool {
-	_, err := strconv.Atoi(text)
-	return err == nil
-}
-
-func parseIPAddress(input string) string {
-	r := regexp.MustCompile(`(([0-9]{1,3}\.){3}[0-9]{1,3})(/[0-9]{1,2})?`)
-	matches := r.FindStringSubmatch(input)
-	value := ""
-	if len(matches) > 0 {
-		value = matches[0]
-	}
-	return value
-}
-
-func parseProtocol(inputs ...string) string {
-	r := regexp.MustCompile(`/?(tcp|udp)`)
-	value := ""
-	for _, input := range inputs {
-		matches := r.FindStringSubmatch(input)
-		if len(matches) > 1 {
-			return matches[1]
-		}
-	}
-
-	return value
-}
-
-func parsePort(input string) string {
-	r := regexp.MustCompile(`([0-9]*)(/[a-z]{3})?`)
-	value := ""
-	matches := r.FindStringSubmatch(input)
-	if len(matches) > 0 {
-		value = matches[1]
-	}
-
-	return value
-}
-
-func parseInterfaceIndex(input string, interfaces []string) int {
-	r := regexp.MustCompile(`.+ on (.+)`)
-	matches := r.FindStringSubmatch(strings.TrimSpace(input))
-	index := len(interfaces) - 1
-
-	if len(matches) == 0 {
-		return index
-	}
-
-	for i, interfaceValue := range interfaces {
-		if matches[1] == interfaceValue {
-			return i
-		}
-	}
-
-	return index
-}
-
 func (t *Tui) EditForm() {
 	t.table.SetSelectedFunc(func(row int, column int) {
 		if row == 0 {
@@ -237,10 +168,10 @@ func (t *Tui) EditForm() {
 		to := t.table.GetCell(row, 1).Text
 		from := t.table.GetCell(row, 4).Text
 
-		toValue := parseIPAddress(to)
-		fromValue := parseIPAddress(from)
+		toValue := utils.ParseIPAddress(to)
+		fromValue := utils.ParseIPAddress(from)
 
-		proto := parseProtocol(to, from)
+		proto := utils.ParseProtocol(to, from)
 		protocolOptionIndex := 0
 		switch proto {
 		case "tcp":
@@ -251,8 +182,8 @@ func (t *Tui) EditForm() {
 			protocolOptionIndex = 0
 		}
 
-		portValue := parsePort(t.table.GetCell(row, 2).Text)
-		interfaceOptionIndex := parseInterfaceIndex(to, interfaces)
+		portValue := utils.ParsePort(t.table.GetCell(row, 2).Text)
+		interfaceOptionIndex := utils.ParseInterfaceIndex(to, interfaces)
 
 		actionOptionIndex := 0
 		switch t.table.GetCell(row, 3).Text {
@@ -277,7 +208,7 @@ func (t *Tui) EditForm() {
 		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
 
 		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
-			AddInputField("Port", portValue, 20, validatePort, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddInputField("Port", portValue, 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 			AddDropDown("Interface", interfaces, interfaceOptionIndex, nil).
 			AddDropDown("Protocol", []string{"", "tcp", "udp"}, protocolOptionIndex, nil).
 			AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, actionOptionIndex, nil).
@@ -362,15 +293,15 @@ func (t *Tui) CreateRule(position ...int) {
 	}
 
 	// Dry-run
-	err, _, _ := shellout(dryCmd + preCmd + cmd)
+	err, _, _ := utils.Shellout(dryCmd + preCmd + cmd)
 	if err == nil {
 		// Delete first
 		if len(position) > 0 {
-			shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
+			utils.Shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
 		}
 
 		// Then create
-		err, _, _ = shellout(baseCmd + preCmd + cmd)
+		err, _, _ = utils.Shellout(baseCmd + preCmd + cmd)
 		if err != nil {
 			log.Print(err)
 		}
@@ -392,7 +323,7 @@ func (t *Tui) RemoveRule() {
 		}
 		t.CreateModal("Are you sure you want to remove this rule?",
 			func() {
-				shellout(fmt.Sprintf("ufw --force delete %d", row))
+				utils.Shellout(fmt.Sprintf("ufw --force delete %d", row))
 			},
 			func() {
 				t.pages.HidePage("modal")
@@ -426,7 +357,7 @@ func (t *Tui) CreateMenu() {
 		AddItem("Disable ufw", "", 's', func() {
 			t.CreateModal("Are you sure you want to disable ufw?",
 				func() {
-					shellout("ufw --force disable")
+					utils.Shellout("ufw --force disable")
 					t.app.Stop()
 				},
 				func() {
@@ -441,7 +372,7 @@ func (t *Tui) CreateMenu() {
 		AddItem("Reset rules", "", 'r', func() {
 			t.CreateModal("Are you sure you want to reset all rules?",
 				func() {
-					shellout("ufw --force reset")
+					utils.Shellout("ufw --force reset")
 					t.app.Stop()
 				},
 				func() {
@@ -488,45 +419,31 @@ func (t *Tui) CreateLayout() *tview.Pages {
 	return t.pages
 }
 
-func main() {
+func (t *Tui) Build(data []string) {
 
-	cmd := exec.Command("id", "-u")
-	output, err := cmd.Output()
-	i, err := strconv.Atoi(string(output[:len(output)-1]))
-	if i != 0 {
-		log.Fatal("This program must be run as root! (sudo)")
-	}
-
-	tui := CreateApplication()
-	tui.Init()
-	data, err := tui.LoadTableData()
-	if err != nil {
-		log.Print(err)
-	}
-
-	root := tui.CreateLayout()
+	root := t.CreateLayout()
 
 	if len(data) <= 1 {
-		tui.pages.HidePage("base")
-		tui.CreateModal("ufw is disabled.\nDo you want to enable it?",
+		t.pages.HidePage("base")
+		t.CreateModal("ufw is disabled.\nDo you want to enable it?",
 			func() {
-				shellout("ufw --force enable")
+				utils.Shellout("ufw --force enable")
 			},
 			func() {
-				tui.app.Stop()
+				t.app.Stop()
 			},
 			func() {
-				tui.pages.HidePage("modal")
-				tui.pages.ShowPage("base")
-				tui.app.SetFocus(tui.menu)
+				t.pages.HidePage("modal")
+				t.pages.ShowPage("base")
+				t.app.SetFocus(t.menu)
 			},
 		)
 	}
 
-	tui.CreateTable(data)
-	tui.CreateMenu()
+	t.CreateTable(data)
+	t.CreateMenu()
 
-	if err := tui.app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
+	if err := t.app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
 		panic(err)
 	}
 }
