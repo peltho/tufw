@@ -1,3 +1,7 @@
+![GitHub](https://img.shields.io/github/license/peltho/tufw)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/peltho/tufw)
+[![Go Report Card](https://goreportcard.com/badge/github.com/peltho/tufw)](https://goreportcard.com/report/github.com/peltho/tufw)
+
 # Terminal UI for ufw
 This go package provides a terminal user interface for `ufw`.
 
@@ -8,9 +12,11 @@ It allows you to add, edit or remove rules in a fancy way which is ideal when yo
 > Be sure to run it as root otherwise it won't work.
 
 ## Installation
-Just head over the releases and install it manually with your favorite package manager.
+Just head over the [releases](https://github.com/peltho/tufw/releases) page and install it manually with your favorite package manager.
 
-For instance: ```sudo pacman -U tufw_xxx_linux_amd64.pkg.tar.zst```
+For instance: ```sudo apt install tufw_0.1.0_linux_amd64.deb```
+
+You can also find this package on **AUR** for archlinux users: ```yaourt -S tufw-git```
 
 ## Dependencies
 This package is based on [rivo/tview](https://github.com/rivo/tview) (and its dependencies).
