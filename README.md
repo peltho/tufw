@@ -8,9 +8,9 @@ It allows you to add, edit or remove rules in a fancy way which is ideal when yo
 > Be sure to run it as root otherwise it won't work.
 
 ## Installation
-```
-go install github.com/peltho/tufw@latest
-```
+Just head over the releases and install it manually with your favorite package manager.
+
+For instance: ```sudo pacman -U tufw_xxx_linux_amd64.pkg.tar.zst```
 
 ## Dependencies
 This package is based on [rivo/tview](https://github.com/rivo/tview) (and its dependencies).
