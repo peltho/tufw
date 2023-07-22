@@ -48,6 +48,19 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 	return interfaces, nil
 }
 
+func (t *Tui) LoadSearchData(needle string) ([]string, error) {
+	err, out, _ := utils.Shellout(fmt.Sprintf(
+		"ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/' | grep -E %v",
+		needle,
+	))
+	if err != nil {
+		return []string{}, nil
+	}
+	rows := strings.Split(out, "\n")
+
+	return rows, nil
+}
+
 func (t *Tui) LoadTableData() ([]string, error) {
 	err, out, _ := utils.Shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
 
@@ -130,6 +143,24 @@ func (t *Tui) CreateModal(text string, confirm func(), cancel func(), finally fu
 		modal.ClearButtons()
 		finally()
 	}), true, true)
+}
+
+func (t *Tui) SearchForm() {
+	t.form.AddInputField("Regex", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).AddButton("Search", func() {
+		needle := t.form.GetFormItem(0).(*tview.InputField).GetText()
+		data, _ := t.LoadSearchData(needle)
+
+		if len(data) > 0 {
+			t.table.Clear()
+			t.CreateTable(data)
+		} else {
+			t.secondHelp.SetText(" No result.")
+		}
+	}).AddButton("Cancel", func() {
+		t.Reset()
+		t.ReloadTable()
+		t.app.SetFocus(t.menu)
+	})
 }
 
 func (t *Tui) CreateForm() {
@@ -340,6 +371,11 @@ func (t *Tui) RemoveRule() {
 func (t *Tui) CreateMenu() {
 	menuList := tview.NewList()
 	menuList.
+		AddItem("Search a rule", "", '/', func() {
+			t.SearchForm()
+			t.app.SetFocus(t.form)
+			t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
+		}).
 		AddItem("Add a rule", "", 'a', func() {
 			t.CreateForm()
 			t.app.SetFocus(t.form)
