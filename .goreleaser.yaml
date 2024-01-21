@@ -39,7 +39,18 @@ nfpms:
       - rpm
     dependencies:
       - ufw
-
-# modelines, feel free to remove those if you don't want/use them:
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+aurs:
+  -
+    name: tufw-bin
+    description: "Terminal UI for ufw"
+    homepage: "https://github.com/peltho/tufw"
+    maintainers: 
+      - "Thomas Pellegatta <pellegatta.thomas@gmail.com>"
+    license: "MIT"
+    git_url: "ssh://aur@aur.archlinux.org/tufw-git.git"
+    skip_upload: false
+    depends:
+      - ufw
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
