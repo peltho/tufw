@@ -5,6 +5,8 @@
 *.so
 *.dylib
 
+cmd/tufw/tufw
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -18,3 +20,4 @@ dist/
 
 # IDE
 .idea/
+.vscode/
