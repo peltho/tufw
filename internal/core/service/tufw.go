@@ -170,8 +170,10 @@ func (t *Tui) CreateForm() {
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddInputField("Port", "", 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddDropDown("Interface", interfaces, len(interfaces), nil).
+		// Conditional: AddDropDown("Interface out", ...) with interfaces not selected in above Interface. Only if action = ALLOW FWD | DENY FWD
+		AddDropDown("Interface out", interfaces, len(interfaces), nil). // Disable here?
 		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
-		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, 0, nil).
+		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT", "ALLOW FWD", "DENY FWD"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", func() { t.CreateRule() }).
@@ -187,7 +189,7 @@ func (t *Tui) CreateForm() {
 	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
 }
 
-func (t *Tui) EditForm() {
+func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 	t.table.SetSelectedFunc(func(row int, column int) {
 		if row == 0 {
 			t.app.SetFocus(t.table)
@@ -271,10 +273,11 @@ func (t *Tui) CreateRule(position ...int) {
 	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
 	port := t.form.GetFormItem(1).(*tview.InputField).GetText()
 	_, ninterface := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	_, proto := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
-	_, action := t.form.GetFormItem(4).(*tview.DropDown).GetCurrentOption()
-	from := t.form.GetFormItem(5).(*tview.InputField).GetText()
-	comment := t.form.GetFormItem(6).(*tview.InputField).GetText()
+	_, ninterfaceOut := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption() // disable here?
+	_, proto := t.form.GetFormItem(4).(*tview.DropDown).GetCurrentOption()
+	_, action := t.form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+	from := t.form.GetFormItem(6).(*tview.InputField).GetText()
+	comment := t.form.GetFormItem(7).(*tview.InputField).GetText()
 
 	dryCmd := "ufw --dry-run "
 	baseCmd := "ufw "
@@ -305,6 +308,12 @@ func (t *Tui) CreateRule(position ...int) {
 	preCmd := fmt.Sprintf("%s from ", strings.ToLower(action))
 	if ninterface != "" {
 		preCmd = fmt.Sprintf("%s on %s from ", strings.ToLower(action), ninterface)
+		if ninterface == "ALLOW FWD" {
+			preCmd = fmt.Sprintf("allow in on %s out on %s from ", ninterface, ninterfaceOut)
+		}
+		if ninterface == "DENY FWD" {
+			preCmd = fmt.Sprintf("deny in on %s out on %s from ", ninterface, ninterfaceOut)
+		}
 	}
 
 	if port != "" && proto == "" {
