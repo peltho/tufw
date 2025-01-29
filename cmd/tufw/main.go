@@ -16,6 +16,12 @@ func main() {
 		log.Fatal("This program must be run as root! (sudo)")
 	}
 
+	cmd = exec.Command("ufw", "status")
+	_, err = cmd.Output()
+	if err != nil {
+		log.Fatal("Cannot find ufw. Is it installed?")
+	}
+
 	tui := service.CreateApplication()
 	tui.Init()
 	data, err := tui.LoadTableData()
