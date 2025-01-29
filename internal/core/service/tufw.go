@@ -460,24 +460,20 @@ func (t *Tui) Build(data []string) {
 	root := t.CreateLayout()
 
 	if len(data) <= 1 {
-		if len(data) == 1 && strings.Contains(data[0], "inactive") {
-			t.pages.HidePage("base")
-			t.CreateModal("ufw is disabled.\nDo you want to enable it?",
-				func() {
-					utils.Shellout("ufw --force enable")
-				},
-				func() {
-					t.app.Stop()
-				},
-				func() {
-					t.pages.HidePage("modal")
-					t.pages.ShowPage("base")
-					t.app.SetFocus(t.menu)
-				},
-			)
-		} else {
-			panic("ufw is not installed.\nBe sure to install it before launching tufw")
-		}
+		t.pages.HidePage("base")
+		t.CreateModal("ufw is disabled.\nDo you want to enable it?",
+			func() {
+				utils.Shellout("ufw --force enable")
+			},
+			func() {
+				t.app.Stop()
+			},
+			func() {
+				t.pages.HidePage("modal")
+				t.pages.ShowPage("base")
+				t.app.SetFocus(t.menu)
+			},
+		)
 	}
 
 	t.CreateTable(data)
