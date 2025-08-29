@@ -163,15 +163,34 @@ func (t *Tui) SearchForm() {
 	})
 }
 
+func updateInterfaceOut(form *tview.Form, action string, interfaces []string, selectedIn string) {
+	if action != "ALLOW FWD" && action != "DENY FWD" {
+		return
+	}
+
+	var filtered []string
+	for _, iface := range interfaces {
+		if iface != selectedIn {
+			filtered = append(filtered, iface)
+		}
+	}
+
+	// Add new one
+	form.AddDropDown("Interface out", filtered, 0, nil)
+}
+
 func (t *Tui) CreateForm() {
 	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 	interfaces, _ := t.LoadInterfaces()
 
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddInputField("Port", "", 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddDropDown("Interface", interfaces, len(interfaces), nil).
-		// Conditional: AddDropDown("Interface out", ...) with interfaces not selected in above Interface. Only if action = ALLOW FWD | DENY FWD
-		AddDropDown("Interface out", interfaces, len(interfaces), nil). // Disable here?
+		AddDropDown("Interface", interfaces, len(interfaces), func(option string, index int) {
+			if item, ok := t.form.GetFormItemByLabel("Action *").(*tview.DropDown); ok {
+				_, action := item.GetCurrentOption()
+				updateInterfaceOut(t.form, action, interfaces, option)
+			}
+		}).
 		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
 		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT", "ALLOW FWD", "DENY FWD"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
