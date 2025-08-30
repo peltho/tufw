@@ -289,14 +289,19 @@ func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 }
 
 func (t *Tui) CreateRule(position ...int) {
+
+	var ninterfaceOut = ""
+	if item, ok := t.form.GetFormItemByLabel("Interface out").(*tview.DropDown); ok {
+		_, ninterfaceOut = item.GetCurrentOption()
+	}
+
 	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
 	port := t.form.GetFormItem(1).(*tview.InputField).GetText()
 	_, ninterface := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
-	_, ninterfaceOut := t.form.GetFormItem(3).(*tview.DropDown).GetCurrentOption() // disable here?
-	_, proto := t.form.GetFormItem(4).(*tview.DropDown).GetCurrentOption()
-	_, action := t.form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
-	from := t.form.GetFormItem(6).(*tview.InputField).GetText()
-	comment := t.form.GetFormItem(7).(*tview.InputField).GetText()
+	_, proto := t.form.GetFormItemByLabel("Protocol").(*tview.DropDown).GetCurrentOption()
+	_, action := t.form.GetFormItemByLabel("Action *").(*tview.DropDown).GetCurrentOption()
+	from := t.form.GetFormItemByLabel("From").(*tview.InputField).GetText()
+	comment := t.form.GetFormItemByLabel("Comment").(*tview.InputField).GetText()
 
 	dryCmd := "ufw --dry-run "
 	baseCmd := "ufw "
@@ -327,10 +332,10 @@ func (t *Tui) CreateRule(position ...int) {
 	preCmd := fmt.Sprintf("%s from ", strings.ToLower(action))
 	if ninterface != "" {
 		preCmd = fmt.Sprintf("%s on %s from ", strings.ToLower(action), ninterface)
-		if ninterface == "ALLOW FWD" {
+		if action == "ALLOW FWD" {
 			preCmd = fmt.Sprintf("allow in on %s out on %s from ", ninterface, ninterfaceOut)
 		}
-		if ninterface == "DENY FWD" {
+		if action == "DENY FWD" {
 			preCmd = fmt.Sprintf("deny in on %s out on %s from ", ninterface, ninterfaceOut)
 		}
 	}
