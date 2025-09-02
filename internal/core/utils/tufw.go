@@ -74,3 +74,25 @@ func ParseInterfaceIndex(input string, interfaces []string) int {
 
 	return index
 }
+
+func ParseOutInterface(to string) string {
+	parts := strings.Split(to, ".+ out on (.+)")
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
+}
+
+func SplitValueWithIface(s string) (val, iface string) {
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, "(") && strings.HasSuffix(s, ")") {
+		open := strings.LastIndex(s, "(")
+		close := strings.LastIndex(s, ")")
+		if open != -1 && close > open {
+			val = strings.TrimSpace(s[:open])
+			iface = strings.TrimSpace(s[open+1 : close])
+			return
+		}
+	}
+	return s, ""
+}

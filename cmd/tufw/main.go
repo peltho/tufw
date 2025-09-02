@@ -10,9 +10,9 @@ import (
 
 func main() {
 	cmd := exec.Command("id", "-u")
-	output, err := cmd.Output()
+	output, _ := cmd.Output()
 	i, err := strconv.Atoi(string(output[:len(output)-1]))
-	if i != 0 {
+	if i != 0 || err != nil {
 		log.Fatal("This program must be run as root! (sudo)")
 	}
 
