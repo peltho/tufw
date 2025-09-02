@@ -20,7 +20,7 @@ archives:
   files:
   - README.md
 snapshot:
-  name_template: "{{ .Version }}-SNAPSHOT-{{ .CommitTimestamp }}-{{ .ShortCommit }}"
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .CommitTimestamp }}-{{ .ShortCommit }}"
 changelog:
   sort: asc
   filters:
@@ -39,13 +39,13 @@ nfpms:
   dependencies:
   - ufw
 aurs:
-- name: tufw-bin
+- name: tufw-git
   description: "Terminal UI for ufw"
   homepage: "https://github.com/peltho/tufw"
   maintainers:
   - "Thomas Pellegatta <pellegatta.thomas@gmail.com>"
   license: "MIT"
-  git_url: "ssh://aur@aur.archlinux.org/tufw-git.git"
+  git_url: "git@github.com:peltho/tufw.git"
   skip_upload: false
   depends:
   - ufw

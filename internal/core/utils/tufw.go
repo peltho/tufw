@@ -75,14 +75,6 @@ func ParseInterfaceIndex(input string, interfaces []string) int {
 	return index
 }
 
-func ParseOutInterface(to string) string {
-	parts := strings.Split(to, ".+ out on (.+)")
-	if len(parts) == 2 {
-		return strings.TrimSpace(parts[1])
-	}
-	return ""
-}
-
 func SplitValueWithIface(s string) (val, iface string) {
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, "(") && strings.HasSuffix(s, ")") {
