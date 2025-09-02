@@ -20,7 +20,7 @@ archives:
   files:
   - README.md
 snapshot:
-  name_template: "{{ .Version }}-SNAPSHOT-{{ .CommitTimestamp }}-{{ .ShortCommit }}"
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .CommitTimestamp }}-{{ .ShortCommit }}"
 changelog:
   sort: asc
   filters:
