@@ -45,7 +45,7 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 		log.Printf("error: %v\n", err)
 	}
 
-	interfaces := append(strings.Fields(out), "")
+	interfaces := strings.Fields(out)
 
 	return interfaces, nil
 }
@@ -95,19 +95,107 @@ func (t *Tui) CreateTable(rows []string) {
 			}
 
 			cols := strings.Fields(row)
-			alignment := tview.AlignCenter
-			value := ""
-			switch {
-			case len(cols) < len(columns) && c >= len(cols):
-				value = ""
-			case c >= 5:
-				value = strings.ReplaceAll(strings.Join(cols[c:], " "), "#", "")
-				alignment = tview.AlignLeft
-			default:
-				value = strings.ReplaceAll(cols[c], "_", " ")
+
+			// --- Split out comment so trailing "on eth0" doesn't leak into Comment ---
+			core := cols
+			commentText := ""
+			for i, tok := range cols {
+				if strings.HasPrefix(tok, "#") {
+					// token could be "#" or "#something"
+					if tok == "#" && i+1 < len(cols) {
+						commentText = strings.Join(cols[i+1:], " ")
+					} else {
+						commentText = strings.TrimLeft(strings.Join(cols[i:], " "), "#")
+					}
+					core = cols[:i]
+					break
+				}
 			}
 
-			t.table.SetCell(r+1, c, tview.NewTableCell(value).SetTextColor(tcell.ColorWhite).SetAlign(alignment).SetExpansion(1))
+			// Safe getters for the expected fields
+			get := func(i int) string {
+				if i >= 0 && i < len(core) {
+					return core[i]
+				}
+				return ""
+			}
+
+			idx := get(0)
+			toField := get(1)
+			portField := get(2)
+			actionField := get(3)
+			fromField := get(4)
+
+			// --- Extract interface suffix from To: "<value>_on_<iface>" ---
+			var ifaceSuffix string
+			if i := strings.LastIndex(toField, "_on_"); i != -1 && i+4 < len(toField) {
+				ifaceSuffix = toField[i+4:]
+				toField = toField[:i]
+			}
+
+			actionUpper := strings.ToUpper(actionField)
+			var ifaceIn, ifaceOut string
+
+			switch {
+			case strings.Contains(actionUpper, "FWD"):
+				// For route/forward rules:
+				// To token suffix is OUT iface, trailing "on <iface>" is IN iface.
+				ifaceOut = ifaceSuffix
+				for i := 0; i+1 < len(core); i++ {
+					if core[i] == "on" && core[i+1] != "" {
+						// choose the last occurrence as "in" iface
+						ifaceIn = core[i+1]
+					}
+				}
+			case strings.Contains(actionUpper, "IN"):
+				// Inbound rules: suffix represents IN iface.
+				ifaceIn = ifaceSuffix
+			case strings.Contains(actionUpper, "OUT"):
+				// Outbound rules: suffix represents OUT iface.
+				ifaceOut = ifaceSuffix
+			default:
+				// Fallback: treat suffix as OUT iface if present.
+				ifaceOut = ifaceSuffix
+			}
+
+			// Build display values
+			toDisplay := strings.ReplaceAll(toField, "_", " ")
+			if ifaceOut != "" {
+				toDisplay = fmt.Sprintf("%s (%s)", toDisplay, ifaceOut)
+			}
+
+			fromDisplay := strings.ReplaceAll(fromField, "_", " ")
+			if ifaceIn != "" {
+				fromDisplay = fmt.Sprintf("%s (%s)", fromDisplay, ifaceIn)
+			}
+
+			alignment := tview.AlignCenter
+			value := ""
+
+			switch c {
+			case 0: // "#"
+				value = idx
+			case 1: // "To"
+				value = toDisplay
+			case 2: // "Port"
+				value = strings.ReplaceAll(portField, "_", " ")
+			case 3: // "Action"
+				value = strings.ReplaceAll(actionField, "_", " ")
+			case 4: // "From"
+				value = fromDisplay
+			case 5: // "Comment"
+				value = commentText
+				alignment = tview.AlignLeft
+			default:
+				value = ""
+			}
+
+			t.table.SetCell(r+1, c,
+				tview.NewTableCell(value).
+					SetTextColor(tcell.ColorWhite).
+					SetAlign(alignment).
+					SetExpansion(1),
+			)
 		}
 	}
 
@@ -165,11 +253,7 @@ func (t *Tui) SearchForm() {
 	})
 }
 
-func updateInterfaceOut(form *tview.Form, action string, interfaces []string, selectedIn string) {
-	if action != "ALLOW FWD" && action != "DENY FWD" {
-		return
-	}
-
+func updateInterfaces(interfaces []string, selectedIn string) []string {
 	var filtered []string
 	for _, iface := range interfaces {
 		if iface != selectedIn {
@@ -177,24 +261,66 @@ func updateInterfaceOut(form *tview.Form, action string, interfaces []string, se
 		}
 	}
 
-	// Add new one
-	form.AddDropDown("Interface out", filtered, 0, nil)
+	return filtered
 }
 
 func (t *Tui) CreateForm() {
 	t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 	interfaces, _ := t.LoadInterfaces()
 
+	var ifaceInDropDown, ifaceOutDropDown *tview.DropDown
+
+	updateInterfaceDropDowns := func(changed string, selected string) {
+		// Update the opposite dropdown based on selection
+		switch changed {
+		case "Interface":
+			filtered := updateInterfaces(interfaces, selected)
+			ifaceOutDropDown.SetOptions(filtered, nil)
+		case "Interface out":
+			filtered := updateInterfaces(interfaces, selected)
+			ifaceInDropDown.SetOptions(filtered, nil)
+		}
+	}
+
+	ifaceInDropDown = tview.NewDropDown().
+		SetLabel("Interface").
+		SetOptions(interfaces, func(text string, index int) {
+			updateInterfaceDropDowns("Interface", text)
+		})
+
+	ifaceOutDropDown = tview.NewDropDown().
+		SetLabel("Interface out").
+		SetOptions(interfaces, func(text string, index int) {
+			updateInterfaceDropDowns("Interface out", text)
+		})
+
 	t.form.AddInputField("To", "", 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 		AddInputField("Port", "", 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
-		AddDropDown("Interface", interfaces, len(interfaces), func(option string, index int) {
-			if item, ok := t.form.GetFormItemByLabel("Action *").(*tview.DropDown); ok {
-				_, action := item.GetCurrentOption()
-				updateInterfaceOut(t.form, action, interfaces, option)
+		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT", "ALLOW FWD", "DENY FWD"}, 0, func(action string, index int) {
+			if action == "ALLOW FWD" || action == "DENY FWD" {
+				// Ensure the Interface out dropdown is in the form
+				found := false
+				for i := 0; i < t.form.GetFormItemCount(); i++ {
+					if t.form.GetFormItem(i).GetLabel() == "Interface out" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.form.AddFormItem(ifaceOutDropDown)
+				}
+			} else {
+				// Remove Interface out if it exists
+				for i := 0; i < t.form.GetFormItemCount(); i++ {
+					if t.form.GetFormItem(i).GetLabel() == "Interface out" {
+						t.form.RemoveFormItem(i)
+						break
+					}
+				}
 			}
 		}).
+		AddFormItem(ifaceInDropDown).
 		AddDropDown("Protocol", []string{"", "tcp", "udp"}, 0, nil).
-		AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT", "ALLOW FWD", "DENY FWD"}, 0, nil).
 		AddInputField("From", "", 20, nil, nil).
 		AddInputField("Comment", "", 40, nil, nil).
 		AddButton("Save", func() { t.CreateRule() }).
@@ -210,7 +336,7 @@ func (t *Tui) CreateForm() {
 	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(t.color).SetBorderPadding(0, 0, 1, 1)
 }
 
-func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
+func (t *Tui) EditForm() {
 	t.table.SetSelectedFunc(func(row int, column int) {
 		if row == 0 {
 			t.app.SetFocus(t.table)
@@ -219,13 +345,13 @@ func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 		t.help.SetText("Use <Tab> and <Enter> keys to navigate through the form").SetBorderPadding(1, 0, 1, 1)
 		interfaces, _ := t.LoadInterfaces()
 
-		to := t.table.GetCell(row, 1).Text
-		from := t.table.GetCell(row, 4).Text
+		toCell := t.table.GetCell(row, 1).Text
+		fromCell := t.table.GetCell(row, 4).Text
 
-		toValue := utils.ParseIPAddress(to)
-		fromValue := utils.ParseIPAddress(from)
+		toValue, ninterfaceOut := utils.SplitValueWithIface(toCell)
+		fromValue, ninterface := utils.SplitValueWithIface(fromCell)
 
-		proto := utils.ParseProtocol(to, from)
+		proto := utils.ParseProtocol(toValue, fromValue)
 		protocolOptionIndex := 0
 		switch proto {
 		case "tcp":
@@ -237,10 +363,12 @@ func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 		}
 
 		portValue := utils.ParsePort(t.table.GetCell(row, 2).Text)
-		interfaceOptionIndex := utils.ParseInterfaceIndex(to, interfaces)
+		interfaceOptionIndex := utils.ParseInterfaceIndex(ninterface, interfaces)
+
+		actionText := t.table.GetCell(row, 3).Text
 
 		actionOptionIndex := 0
-		switch t.table.GetCell(row, 3).Text {
+		switch actionText {
 		case "ALLOW-IN":
 			actionOptionIndex = 0
 		case "DENY-IN":
@@ -257,21 +385,80 @@ func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 			actionOptionIndex = 6
 		case "LIMIT-OUT":
 			actionOptionIndex = 7
+		case "ALLOW-FWD":
+			actionOptionIndex = 8
+		case "DENY-FWD":
+			actionOptionIndex = 9
 		}
 
 		comment := strings.ReplaceAll(t.table.GetCell(row, 5).Text, "# ", "")
 
+		var ifaceInDropDown, ifaceOutDropDown *tview.DropDown
+		selectedIface := interfaces[interfaceOptionIndex]
+		outInterfaces := updateInterfaces(interfaces, selectedIface)
+
+		outInterfaceIndex := 0
+
+		if actionText == "ALLOW-FWD" || actionText == "DENY-FWD" {
+			outInterfaceIndex = utils.ParseInterfaceIndex(ninterfaceOut, outInterfaces)
+		}
+
+		ifaceInDropDown = tview.NewDropDown().
+			SetLabel("Interface").
+			SetOptions(interfaces, nil).
+			SetCurrentOption(interfaceOptionIndex)
+
+		ifaceOutDropDown = tview.NewDropDown().
+			SetLabel("Interface out").
+			SetOptions(outInterfaces, nil).
+			SetCurrentOption(outInterfaceIndex)
+
+		// --- Mutual exclusion logic
+		ifaceInDropDown.SetSelectedFunc(func(text string, index int) {
+			ifaceOutDropDown.SetOptions(updateInterfaces(interfaces, text), nil)
+		})
+		ifaceOutDropDown.SetSelectedFunc(func(text string, index int) {
+			ifaceInDropDown.SetOptions(updateInterfaces(interfaces, text), nil)
+		})
+
+		// --- Show/hide Interface out
+		showOrRemoveInterfaceOut := func(action string) {
+			found := false
+			for i := 0; i < t.form.GetFormItemCount(); i++ {
+				if t.form.GetFormItem(i).GetLabel() == "Interface out" {
+					found = true
+					break
+				}
+			}
+
+			if action == "ALLOW FWD" || action == "DENY FWD" {
+				if !found {
+					t.form.AddFormItem(ifaceOutDropDown)
+				}
+			} else if found {
+				for i := 0; i < t.form.GetFormItemCount(); i++ {
+					if t.form.GetFormItem(i).GetLabel() == "Interface out" {
+						t.form.RemoveFormItem(i)
+						break
+					}
+				}
+			}
+		}
+
 		t.form.AddInputField("To", toValue, 20, nil, nil).SetFieldTextColor(tcell.ColorWhite).
 			AddInputField("Port", portValue, 20, utils.ValidatePort, nil).SetFieldTextColor(tcell.ColorWhite).
+			AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT", "ALLOW FWD", "DENY FWD"}, actionOptionIndex, func(action string, index int) {
+				showOrRemoveInterfaceOut(action)
+			}).
 			AddDropDown("Interface", interfaces, interfaceOptionIndex, nil).
 			AddDropDown("Protocol", []string{"", "tcp", "udp"}, protocolOptionIndex, nil).
-			AddDropDown("Action *", []string{"ALLOW IN", "DENY IN", "REJECT IN", "LIMIT IN", "ALLOW OUT", "DENY OUT", "REJECT OUT", "LIMIT OUT"}, actionOptionIndex, nil).
 			AddInputField("From", fromValue, 20, nil, nil).
-			AddInputField("Comment", comment, 40, nil, nil).
-			AddButton("Save", func() {
-				t.CreateRule(row)
-				t.app.SetFocus(t.table)
-			}).
+			AddInputField("Comment", comment, 40, nil, nil)
+
+		t.form.AddButton("Save", func() {
+			t.CreateRule(row)
+			t.app.SetFocus(t.table)
+		}).
 			AddButton("Cancel", func() {
 				t.Reset()
 				t.help.SetText("Press <Esc> to go back to the menu selection").SetBorderPadding(1, 0, 1, 0)
@@ -292,90 +479,102 @@ func (t *Tui) EditForm() { // TODO: Fix it for forwarding as well
 
 func (t *Tui) CreateRule(position ...int) {
 
-	var ninterfaceOut = ""
+	isAnEdit := len(position) > 0 && position[0] < t.table.GetRowCount()-NUMBER_OF_V6_RULES-1
+
+	var ninterfaceOut string
 	if item, ok := t.form.GetFormItemByLabel("Interface out").(*tview.DropDown); ok {
 		_, ninterfaceOut = item.GetCurrentOption()
 	}
 
-	to := t.form.GetFormItem(0).(*tview.InputField).GetText()
-	port := t.form.GetFormItem(1).(*tview.InputField).GetText()
-	_, ninterface := t.form.GetFormItem(2).(*tview.DropDown).GetCurrentOption()
+	to := t.form.GetFormItemByLabel("To").(*tview.InputField).GetText()
+	port := t.form.GetFormItemByLabel("Port").(*tview.InputField).GetText()
+	_, ninterface := t.form.GetFormItemByLabel("Interface").(*tview.DropDown).GetCurrentOption()
 	_, proto := t.form.GetFormItemByLabel("Protocol").(*tview.DropDown).GetCurrentOption()
 	_, action := t.form.GetFormItemByLabel("Action *").(*tview.DropDown).GetCurrentOption()
 	from := t.form.GetFormItemByLabel("From").(*tview.InputField).GetText()
 	comment := t.form.GetFormItemByLabel("Comment").(*tview.InputField).GetText()
 
-	dryCmd := "ufw --dry-run "
-	baseCmd := "ufw "
-
-	if len(position) > 0 && position[0] < t.table.GetRowCount()-NUMBER_OF_V6_RULES-1 {
-		dryCmd = fmt.Sprintf("ufw --dry-run insert %d ", position[0])
-		baseCmd = fmt.Sprintf("ufw insert %d ", position[0])
-	}
-
-	if ninterface != "" && (port != "" || proto != "") {
-		return
-	}
-
+	// Guard clauses: no-op if everything is empty
 	if port == "" && proto == "" && ninterface == "" && to == "" && from == "" {
 		return
 	}
 
-	toValue := to
+	// Default "any" when empty
 	if to == "" {
-		toValue = "any"
+		to = "any"
 	}
-	fromValue := from
 	if from == "" {
-		fromValue = "any"
+		from = "any"
 	}
 
-	cmd := ""
-	preCmd := fmt.Sprintf("%s from ", strings.ToLower(action))
+	// Build the preCmd part
+	preCmd := strings.ToLower(action)
 	if ninterface != "" {
-		preCmd = fmt.Sprintf("%s on %s from ", strings.ToLower(action), ninterface)
-		if action == "ALLOW FWD" {
-			preCmd = fmt.Sprintf("allow in on %s out on %s from ", ninterface, ninterfaceOut)
+		preCmd = fmt.Sprintf("%s on %s", preCmd, ninterface)
+		if action == "ALLOW FWD" && ninterfaceOut != "" {
+			preCmd = fmt.Sprintf("route allow in on %s out on %s", ninterface, ninterfaceOut)
+			if isAnEdit {
+				preCmd = fmt.Sprintf("allow in on %s out on %s", ninterface, ninterfaceOut)
+			}
 		}
-		if action == "DENY FWD" {
-			preCmd = fmt.Sprintf("deny in on %s out on %s from ", ninterface, ninterfaceOut)
+		if action == "DENY FWD" && ninterfaceOut != "" {
+			preCmd = fmt.Sprintf("route deny in on %s out on %s", ninterface, ninterfaceOut)
+			if isAnEdit {
+				preCmd = fmt.Sprintf("deny in on %s out on %s", ninterface, ninterfaceOut)
+			}
 		}
 	}
 
-	if port != "" && proto == "" {
-		cmd = fmt.Sprintf("%s to %s port %s comment '%s'", fromValue, toValue, port, comment)
+	// Build the main rule parts
+	var parts []string
+	parts = append(parts, "from", from, "to", to)
+
+	if proto != "" {
+		parts = append(parts, "proto", proto)
 	}
-	if port == "" && proto != "" {
-		cmd = fmt.Sprintf("%s proto %s to %s comment '%s'", fromValue, proto, toValue, comment)
+	if port != "" {
+		parts = append(parts, "port", port)
 	}
-	if port != "" && proto != "" {
-		cmd = fmt.Sprintf("%s proto %s to %s port %s comment '%s'", fromValue, proto, toValue, port, comment)
-	}
-	if port == "" && proto == "" {
-		cmd = fmt.Sprintf("%s to %s comment '%s'", fromValue, toValue, comment)
-	}
-	if ninterface != "" && to == "" {
-		cmd = fmt.Sprintf("%s comment '%s'", fromValue, comment)
+	if comment != "" {
+		// Escape single quotes inside comment
+		escaped := strings.ReplaceAll(comment, "'", "''")
+		parts = append(parts, "comment", fmt.Sprintf("'%s'", escaped))
 	}
 
-	// Dry-run
-	err, _, _ := utils.Shellout(dryCmd + preCmd + cmd)
+	cmd := strings.Join(parts, " ")
+
+	// Choose dry-run or actual
+	dryCmd := "ufw --dry-run " + preCmd + " " + cmd
+	baseCmd := "ufw " + preCmd + " " + cmd
+
+	// It is an edit
+	if isAnEdit {
+		dryCmd = fmt.Sprintf("ufw --dry-run insert %d %s %s", position[0], preCmd, cmd)
+		baseCmd = fmt.Sprintf("ufw insert %d %s %s", position[0], preCmd, cmd)
+
+		if (action == "ALLOW FWD" || action == "DENY FWD") && ninterfaceOut != "" {
+			dryCmd = fmt.Sprintf("ufw --dry-run route insert %d %s %s", position[0], preCmd, cmd)
+			baseCmd = fmt.Sprintf("ufw route insert %d %s %s", position[0], preCmd, cmd)
+		}
+	}
+
+	// Run dry-run first
+	err, _, _ := utils.Shellout(dryCmd)
 	if err == nil {
-		// Delete first
+		// If replacing, delete first
 		if len(position) > 0 {
 			utils.Shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
 		}
-
-		// Then create
-		err, _, _ = utils.Shellout(baseCmd + preCmd + cmd)
-		if err != nil {
-			log.Print(err)
+		// Apply rule
+		if err, _, _ = utils.Shellout(baseCmd); err != nil {
+			log.Printf("Failed to apply rule: %v", err)
+			return
 		}
-	}
-	if err != nil {
-		log.Print(err)
+	} else {
+		log.Printf("Invalid rule: %v", err)
 		return
 	}
+
 	t.Reset()
 	t.ReloadTable()
 }
