@@ -1,4 +1,5 @@
 version: 2
+project_name: tufw
 env:
   - GO111MODULE=on
 before:
@@ -40,7 +41,7 @@ nfpms:
     dependencies:
       - ufw
 aurs:
-  - name: tufw-bin
+  - name: tufw
     description: "Terminal UI for ufw"
     homepage: "https://github.com/peltho/tufw"
     maintainers:
@@ -48,6 +49,7 @@ aurs:
     license: "MIT"
     git_url: "ssh://aur@aur.archlinux.org/tufw-git.git"
     skip_upload: false
+    private_key: /Users/thomas/.ssh/rsa_aur
     depends:
       - ufw
     commit_author:
