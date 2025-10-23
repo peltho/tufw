@@ -19,14 +19,14 @@ const (
 
 func main() {
 	cmd := exec.Command("id", "-u")
-	output, err := cmd.Output()
-	i, err := strconv.Atoi(string(output[:len(output)-1]))
+	output, _ := cmd.Output()
+	i, _ := strconv.Atoi(string(output[:len(output)-1]))
 	if i != 0 {
 		log.Fatal("This program must be run as root! (sudo)")
 	}
 
 	cmd = exec.Command("ufw", "status")
-	_, err = cmd.Output()
+	_, err := cmd.Output()
 	if err != nil {
 		log.Fatal("Cannot find ufw. Is it installed?")
 	}
