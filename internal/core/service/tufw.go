@@ -21,10 +21,12 @@ type Tui struct {
 	help       *tview.TextView
 	secondHelp *tview.TextView
 	pages      *tview.Pages
+	color      tcell.Color
 }
 
-func CreateApplication() *Tui {
-	return new(Tui)
+func CreateApplication(color tcell.Color) *Tui {
+	tui := Tui{color: color}
+	return &tui
 }
 
 func (t *Tui) Init() {
@@ -82,7 +84,7 @@ func (t *Tui) CreateTable(rows []string) {
 	columns := []string{"#", "To", "Port", "Action", "From", "Comment"}
 
 	for c := 0; c < len(columns); c++ {
-		t.table.SetCell(0, c, tview.NewTableCell(columns[c]).SetTextColor(tcell.ColorDarkCyan).SetAlign(tview.AlignCenter))
+		t.table.SetCell(0, c, tview.NewTableCell(columns[c]).SetTextColor(t.color).SetAlign(tview.AlignCenter))
 		if c >= len(columns) {
 			break
 		}
@@ -180,11 +182,11 @@ func (t *Tui) CreateForm() {
 			t.app.SetFocus(t.menu)
 		}).
 		SetButtonTextColor(tcell.ColorWhite).
-		SetButtonBackgroundColor(tcell.ColorDarkCyan).
-		SetFieldBackgroundColor(tcell.ColorDarkCyan).
+		SetButtonBackgroundColor(t.color).
+		SetFieldBackgroundColor(t.color).
 		SetLabelColor(tcell.ColorWhite)
 
-	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(tcell.ColorDarkCyan).SetBorderPadding(0, 0, 1, 1)
+	t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").SetTextColor(t.color).SetBorderPadding(0, 0, 1, 1)
 }
 
 func (t *Tui) EditForm() {
@@ -255,12 +257,12 @@ func (t *Tui) EditForm() {
 				t.app.SetFocus(t.table)
 			}).
 			SetButtonTextColor(tcell.ColorWhite).
-			SetButtonBackgroundColor(tcell.ColorDarkCyan).
-			SetFieldBackgroundColor(tcell.ColorDarkCyan).
+			SetButtonBackgroundColor(t.color).
+			SetFieldBackgroundColor(t.color).
 			SetLabelColor(tcell.ColorWhite)
 
 		t.secondHelp.SetText("* Mandatory field\n\nPort, To and From fields respectively match any and Anywhere if left empty").
-			SetTextColor(tcell.ColorDarkCyan).
+			SetTextColor(t.color).
 			SetBorderPadding(0, 0, 1, 1)
 
 		t.app.SetFocus(t.form)
@@ -421,7 +423,7 @@ func (t *Tui) CreateMenu() {
 			)
 		}).
 		AddItem("Exit", "", 'q', func() { t.app.Stop() })
-	menuList.SetShortcutColor(tcell.ColorDarkCyan).SetBorderPadding(1, 0, 1, 1)
+	menuList.SetShortcutColor(t.color).SetBorderPadding(1, 0, 1, 1)
 	t.menu.AddItem(menuList, 0, 1, true)
 	t.menu.SetBorder(true).SetTitle(" Menu ")
 }
