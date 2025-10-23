@@ -47,13 +47,15 @@ aurs:
     maintainers:
       - "Thomas Pellegatta <pellegatta.thomas@gmail.com>"
     license: "MIT"
-    git_url: "ssh://aur@aur.archlinux.org/tufw.git"
+    git_url: "ssh://aur@aur.archlinux.org/tufw-git.git"
     skip_upload: false
-    private_key: /Users/thomas/.ssh/rsa_aur
     depends:
       - ufw
+    provides:
+      - tufw
+    conflicts:
+      - tufw
+    url_template: "https://github.com/peltho/tufw/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     commit_author:
-        name: goreleaserbot
-        email: bot@goreleaser.com
-env_files:
-    github_token: .github-token
+      name: Thomas Pellegatta
+      email: pellegatta.thomas@gmail.com
