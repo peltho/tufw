@@ -50,7 +50,7 @@ func main() {
 
 	tui := service.CreateApplication(color)
 	tui.Init()
-	data, err := tui.LoadTableData()
+	data, err := tui.LoadUFWOutput()
 	if err != nil {
 		log.Print(err)
 	}

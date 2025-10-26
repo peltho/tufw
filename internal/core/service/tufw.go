@@ -12,6 +12,7 @@ import (
 )
 
 var NUMBER_OF_V6_RULES = 0
+var shellout = utils.Shellout
 
 type Tui struct {
 	app        *tview.Application
@@ -40,7 +41,7 @@ func (t *Tui) Init() {
 }
 
 func (t *Tui) LoadInterfaces() ([]string, error) {
-	err, out, _ := utils.Shellout("ip link show | awk -F: '{ print $2 }' | sed -r 's/^[0-9]+//' | sed '/^$/d' | awk '{$2=$2};1'")
+	err, out, _ := shellout("ip link show | awk -F: '{ print $2 }' | sed -r 's/^[0-9]+//' | sed '/^$/d' | awk '{$2=$2};1'")
 	if err != nil {
 		log.Printf("error: %v\n", err)
 	}
@@ -51,20 +52,50 @@ func (t *Tui) LoadInterfaces() ([]string, error) {
 }
 
 func (t *Tui) LoadSearchData(needle string) ([]string, error) {
-	err, out, _ := utils.Shellout(fmt.Sprintf(
-		"ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/' | grep -E %v",
-		needle,
-	))
+	output, err := t.LoadUFWOutput()
 	if err != nil {
-		return []string{}, nil
+		return nil, fmt.Errorf("failed to load UFW output: %w", err)
+	}
+
+	var rules []string
+	for _, row := range output {
+		rules = append(rules, utils.FormatUfwRule(row))
+	}
+
+	var matches []string
+
+	re, err := regexp.Compile("(?i)" + needle)
+	if err != nil {
+		return nil, fmt.Errorf("invalid search pattern: %w", err)
+	}
+
+	for _, rule := range rules {
+		if re.MatchString(rule) {
+			matches = append(matches, rule)
+		}
+	}
+
+	return matches, nil
+}
+
+func (t *Tui) LoadUFWOutput() ([]string, error) {
+	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4")
+
+	r := regexp.MustCompile(`\(v6\)`)
+	matches := r.FindAllStringSubmatch(out, -1)
+	NUMBER_OF_V6_RULES = len(matches)
+
+	if err != nil {
+		log.Printf("error: %v\n", err)
 	}
 	rows := strings.Split(out, "\n")
 
 	return rows, nil
 }
 
+// @deprecated
 func (t *Tui) LoadTableData() ([]string, error) {
-	err, out, _ := utils.Shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
+	err, out, _ := shellout("ufw status numbered | sed '/^$/d' | awk '{$2=$2};1' | tail -n +4 | sed -r 's/(\\[(\\s)([0-9]+)\\])/\\[\\3\\] /;s/(\\[([0-9]+)\\])/\\[\\2\\] /;s/\\(out\\)//;s/(\\w)\\s(\\(v6\\))/\\1/;s/([A-Z]{2,})\\s([A-Z]{2,3})/\\1-\\2/;s/^(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)\\s(on)\\s(.*)\\s(#.*)?/\\1_\\5_\\6 - \\2 \\4 \\7/;s/([A-Z][a-z]+\\/[a-z]{3})\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)([0-9]{2,})\\s([A-Z]{2,}(-[A-Z]{2,3})?)/\\1Anywhere \\2 \\3/;s/(\\]\\s+)(([0-9]{1,3}\\.){3}[0-9]{1,3}(\\/[0-9]{1,2})?)\\s([A-Z]{2,}-[A-Z]{2,3})/\\1\\2 - \\5/;s/([A-Z][a-z]+)\\s(([A-Z]+).*)/\\1 - \\2/;s/(\\]\\s+)(.*)\\s([0-9]+)(\\/[a-z]{3})/\\1\\2\\4 \\3/;s/(\\]\\s+)\\/([a-z]{3})\\s/\\1\\2 /;s/^(.*)\\s(on)\\s(.*)\\s([A-Z]{2,}(-[A-Z]{2,3})?)\\s(.*)/\\1_\\2_\\3 - \\4 \\6/'")
 
 	r := regexp.MustCompile(`\(v6\)`)
 	matches := r.FindAllStringSubmatch(out, -1)
@@ -90,7 +121,7 @@ func (t *Tui) CreateTable(rows []string) {
 		}
 
 		for r, row := range rows {
-			if r >= len(rows)-1 {
+			if r > len(rows)-1 {
 				break
 			}
 
@@ -169,6 +200,21 @@ func (t *Tui) CreateTable(rows []string) {
 				fromDisplay = fmt.Sprintf("%s (%s)", fromDisplay, ifaceIn)
 			}
 
+			proto := ""
+			if strings.Contains(portField, "/") {
+				split := strings.SplitN(portField, "/", 2)
+				portField = split[0]
+				proto = split[1]
+			}
+
+			portDisplay := portField
+			if proto != "" {
+				portDisplay = fmt.Sprintf("%s/%s", portField, proto)
+			}
+			if portDisplay == "" {
+				portDisplay = "-"
+			}
+
 			alignment := tview.AlignCenter
 			value := ""
 
@@ -178,7 +224,7 @@ func (t *Tui) CreateTable(rows []string) {
 			case 1: // "To"
 				value = toDisplay
 			case 2: // "Port"
-				value = strings.ReplaceAll(portField, "_", " ")
+				value = portDisplay
 			case 3: // "Action"
 				value = strings.ReplaceAll(actionField, "_", " ")
 			case 4: // "From"
@@ -217,8 +263,15 @@ func (t *Tui) CreateTable(rows []string) {
 
 func (t *Tui) ReloadTable() {
 	t.table.Clear()
-	data, _ := t.LoadTableData()
-	t.CreateTable(data)
+	//data, _ := t.LoadTableData()
+	data, _ := t.LoadUFWOutput()
+
+	var rules []string
+	for _, row := range data {
+		rules = append(rules, utils.FormatUfwRule(row))
+	}
+
+	t.CreateTable(rules)
 }
 
 func (t *Tui) CreateModal(text string, confirm func(), cancel func(), finally func()) {
@@ -559,14 +612,14 @@ func (t *Tui) CreateRule(position ...int) {
 	}
 
 	// Run dry-run first
-	err, _, _ := utils.Shellout(dryCmd)
+	err, _, _ := shellout(dryCmd)
 	if err == nil {
 		// If replacing, delete first
 		if len(position) > 0 {
-			utils.Shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
+			shellout(fmt.Sprintf("ufw --force delete %d", position[0]))
 		}
 		// Apply rule
-		if err, _, _ = utils.Shellout(baseCmd); err != nil {
+		if err, _, _ = shellout(baseCmd); err != nil {
 			log.Printf("Failed to apply rule: %v", err)
 			return
 		}
@@ -588,7 +641,7 @@ func (t *Tui) RemoveRule() {
 		}
 		t.CreateModal("Are you sure you want to remove this rule?",
 			func() {
-				utils.Shellout(fmt.Sprintf("ufw --force delete %d", row))
+				shellout(fmt.Sprintf("ufw --force delete %d", row))
 			},
 			func() {
 				t.pages.HidePage("modal")
@@ -627,7 +680,7 @@ func (t *Tui) CreateMenu() {
 		AddItem("Disable ufw", "", 's', func() {
 			t.CreateModal("Are you sure you want to disable ufw?",
 				func() {
-					utils.Shellout("ufw --force disable")
+					shellout("ufw --force disable")
 					t.app.Stop()
 				},
 				func() {
@@ -642,7 +695,7 @@ func (t *Tui) CreateMenu() {
 		AddItem("Reset rules", "", 'r', func() {
 			t.CreateModal("Are you sure you want to reset all rules?",
 				func() {
-					utils.Shellout("ufw --force reset")
+					shellout("ufw --force reset")
 					t.app.Stop()
 				},
 				func() {
@@ -697,7 +750,7 @@ func (t *Tui) Build(data []string) {
 		t.pages.HidePage("base")
 		t.CreateModal("ufw is disabled.\nDo you want to enable it?",
 			func() {
-				utils.Shellout("ufw --force enable")
+				shellout("ufw --force enable")
 			},
 			func() {
 				t.app.Stop()
@@ -710,7 +763,12 @@ func (t *Tui) Build(data []string) {
 		)
 	}
 
-	t.CreateTable(data)
+	var rules []string
+	for _, row := range data {
+		rules = append(rules, utils.FormatUfwRule(row))
+	}
+
+	t.CreateTable(rules)
 	t.CreateMenu()
 
 	if err := t.app.SetRoot(root, true).EnableMouse(false).Run(); err != nil {
