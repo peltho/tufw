@@ -27,6 +27,12 @@ func FormatUfwRule(input string) string {
 	re4 := regexp.MustCompile(`\b(ALLOW|DENY|LIMIT|REJECT)\s+(IN|OUT|FWD)\b`)
 	r = re4.ReplaceAllString(r, `$1-$2`)
 
+	// --- Handle normal "IN on <iface> from any to <ip> proto <proto> port <n>" rules ---
+	reInboundIface := regexp.MustCompile(`(\[\d+\])\s+(?:to\s+)?(\S+)\s+(\d+/\w+)\s+([A-Z]{2,}-IN)\s+(?:from\s+(?:Anywhere|any)\s+)?on\s+(\S+)`)
+	if reInboundIface.MatchString(r) {
+		r = reInboundIface.ReplaceAllString(r, `$1 $2 $3 $4 Anywhere_on_$5`)
+	}
+
 	// Handle FWD rules
 	reRoute := regexp.MustCompile(`(\[\d+\])\s+(\S+)\s+(\d+)(/\w+)?\s+([A-Z]{2,})\s+FWD\s+(\S+)\s+on\s+(\S+)\s+out\s+on\s+(\S+)(?:\s+#\s*(.*))?`)
 	if reRoute.MatchString(r) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -125,115 +126,104 @@ func (t *Tui) CreateTable(rows []string) {
 				break
 			}
 
+			// --- normalize row with your FormatUfwRule first ---
+			row = utils.FormatUfwRule(row)
 			cols := strings.Fields(row)
 
-			// --- Split out comment so trailing "on eth0" doesn't leak into Comment ---
-			core := cols
+			// --- extract comment ---
 			commentText := ""
 			for i, tok := range cols {
 				if strings.HasPrefix(tok, "#") {
-					// token could be "#" or "#something"
-					if tok == "#" && i+1 < len(cols) {
-						commentText = strings.Join(cols[i+1:], " ")
-					} else {
-						commentText = strings.TrimLeft(strings.Join(cols[i:], " "), "#")
-					}
-					core = cols[:i]
+					commentText = strings.Join(cols[i+1:], " ")
+					cols = cols[:i]
 					break
 				}
 			}
 
-			// Safe getters for the expected fields
-			get := func(i int) string {
-				if i >= 0 && i < len(core) {
-					return core[i]
+			if len(cols) == 0 {
+				continue
+			}
+
+			// --- index ---
+			idx := cols[0]
+
+			// --- To and proto ---
+			toField := cols[1]
+			portField := "-"
+			proto := ""
+			if strings.Contains(toField, "/") {
+				parts := strings.SplitN(toField, "/", 2)
+				toField = parts[0]
+				proto = parts[1]
+			}
+
+			// --- Action (ALLOW-IN, DENY-FWD, etc.) ---
+			actionField := ""
+			actionIdx := -1
+			for i, tok := range cols[2:] {
+				if matched, _ := regexp.MatchString(`^(ALLOW|DENY|LIMIT|REJECT)(-IN|-OUT|-FWD)?$`, tok); matched {
+					actionField = tok
+					actionIdx = i + 2
+					break
 				}
-				return ""
 			}
 
-			idx := get(0)
-			toField := get(1)
-			portField := get(2)
-			actionField := get(3)
-			fromField := get(4)
-
-			// --- Extract interface suffix from To: "<value>_on_<iface>" ---
-			var ifaceSuffix string
-			if i := strings.LastIndex(toField, "_on_"); i != -1 && i+4 < len(toField) {
-				ifaceSuffix = toField[i+4:]
-				toField = toField[:i]
-			}
-
-			actionUpper := strings.ToUpper(actionField)
-			var ifaceIn, ifaceOut string
-
-			switch {
-			case strings.Contains(actionUpper, "FWD"):
-				// For route/forward rules:
-				// To token suffix is OUT iface, trailing "on <iface>" is IN iface.
-				ifaceOut = ifaceSuffix
-				for i := 0; i+1 < len(core); i++ {
-					if core[i] == "on" && core[i+1] != "" {
-						// choose the last occurrence as "in" iface
-						ifaceIn = core[i+1]
+			// --- Port (if separate) ---
+			if actionIdx > 2 && actionIdx < len(cols) {
+				for i := 2; i < actionIdx; i++ {
+					if _, err := strconv.Atoi(cols[i]); err == nil {
+						portField = cols[i]
 					}
 				}
-			case strings.Contains(actionUpper, "IN"):
-				// Inbound rules: suffix represents IN iface.
-				ifaceIn = ifaceSuffix
-			case strings.Contains(actionUpper, "OUT"):
-				// Outbound rules: suffix represents OUT iface.
-				ifaceOut = ifaceSuffix
-			default:
-				// Fallback: treat suffix as OUT iface if present.
-				ifaceOut = ifaceSuffix
 			}
 
-			// Build display values
-			toDisplay := strings.ReplaceAll(toField, "_", " ")
-			if ifaceOut != "" {
-				toDisplay = fmt.Sprintf("%s (%s)", toDisplay, ifaceOut)
+			// --- From and iface ---
+			fromField := "Anywhere"
+			if actionIdx >= 0 && actionIdx+1 < len(cols) {
+				fromField = cols[actionIdx+1]
 			}
 
-			fromDisplay := strings.ReplaceAll(fromField, "_", " ")
+			ifaceIn := ""
+			for i := 0; i < len(cols); i++ {
+				if cols[i] == "on" && i+1 < len(cols) {
+					ifaceIn = cols[i+1]
+				}
+			}
+
+			fromDisplay := fromField
 			if ifaceIn != "" {
-				fromDisplay = fmt.Sprintf("%s (%s)", fromDisplay, ifaceIn)
+				fromDisplay = fmt.Sprintf("%s (%s)", fromField, ifaceIn)
 			}
 
-			proto := ""
-			if strings.Contains(portField, "/") {
-				split := strings.SplitN(portField, "/", 2)
-				portField = split[0]
-				proto = split[1]
-			}
-
-			portDisplay := portField
+			toDisplay := toField
 			if proto != "" {
-				portDisplay = fmt.Sprintf("%s/%s", portField, proto)
-			}
-			if portDisplay == "" {
-				portDisplay = "-"
+				toDisplay = fmt.Sprintf("%s/%s", toField, proto)
 			}
 
+			if toDisplay == "" {
+				toDisplay = "-"
+			}
+			if portField == "" {
+				portField = "-"
+			}
+
+			// --- display values per column ---
 			alignment := tview.AlignCenter
 			value := ""
-
 			switch c {
 			case 0: // "#"
 				value = idx
 			case 1: // "To"
 				value = toDisplay
 			case 2: // "Port"
-				value = portDisplay
+				value = portField
 			case 3: // "Action"
-				value = strings.ReplaceAll(actionField, "_", " ")
+				value = actionField
 			case 4: // "From"
 				value = fromDisplay
 			case 5: // "Comment"
 				value = commentText
 				alignment = tview.AlignLeft
-			default:
-				value = ""
 			}
 
 			t.table.SetCell(r+1, c,

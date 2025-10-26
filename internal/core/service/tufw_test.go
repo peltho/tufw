@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -232,13 +231,25 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 			row:         "[ 1] ::1 22/tcp ALLOW IN Anywhere (v6) # SSH v6",
 			expectedCmd: "ufw allow in from any to ::1 proto tcp port 22 comment 'SSH v6'",
 		},
+		{
+			name: "basic SSH",
+			values: formValues{
+				To:        pointer.Of("8.8.8.8"),
+				Port:      pointer.Of("22"),
+				Interface: pointer.Of("eth0"),
+				Protocol:  pointer.Of("tcp"),
+				Action:    "ALLOW IN",
+				From:      pointer.Of(""),
+				Comment:   pointer.Of(""),
+			},
+			row:         "[ 1] 8.8.8.8 22/tcp ALLOW IN Anywhere on eth0",
+			expectedCmd: "ufw allow in on eth0 from any to 8.8.8.8 proto tcp port 22",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var commands []string
-
-			fmt.Println(tt.values.Protocol)
 
 			// Mock per test
 			shellout = func(cmd string) (error, string, string) {
