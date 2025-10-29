@@ -69,14 +69,14 @@ func FormatUfwRule(input string) string {
 	return r
 }
 
-func Shellout(command string) (error, string, string) {
+func Shellout(command string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	return err, stdout.String(), stderr.String()
+	return stdout.String(), stderr.String(), err
 }
 
 func ValidatePort(text string, ch rune) bool {
@@ -119,7 +119,7 @@ func ParsePort(input string) string {
 }
 
 func ParseInterfaceIndex(input string, interfaces []string) int {
-	r := regexp.MustCompile(`.+ on (.+)`)
+	r := regexp.MustCompile(`.+_on_(.+)`)
 	matches := r.FindStringSubmatch(strings.TrimSpace(input))
 	index := len(interfaces) - 1
 
