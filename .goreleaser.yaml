@@ -14,6 +14,7 @@ builds:
     goos:
       - linux
     goarch:
+      - arm
       - arm64
       - amd64
       - '386'

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 
@@ -47,6 +48,13 @@ func main() {
 	default:
 		log.Fatalf("Invalid color: %s. Allowed values are red, green, blue.", *colorFlag)
 	}
+
+	f, err := os.OpenFile("tufw.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(f)
+	defer f.Close()
 
 	tui := service.CreateApplication(color)
 	tui.Init()

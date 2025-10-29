@@ -34,11 +34,11 @@ func FormatUfwRule(input string) string {
 	}
 
 	// Handle FWD rules
-	reRoute := regexp.MustCompile(`(\[\d+\])\s+(\S+)\s+(\d+)(/\w+)?\s+([A-Z]{2,})\s+FWD\s+(\S+)\s+on\s+(\S+)\s+out\s+on\s+(\S+)(?:\s+#\s*(.*))?`)
+	/*reRoute := regexp.MustCompile(`(\[\d+\])\s+(\S+)\s+(\d+)(/\w+)?\s+([A-Z]{2,})\s+FWD\s+(\S+)\s+on\s+(\S+)\s+out\s+on\s+(\S+)(?:\s+#\s*(.*))?`)
 	if reRoute.MatchString(r) {
 		r = reRoute.ReplaceAllString(r, `$1 $2$4 $3 $5-FWD $6_on_$7_out_on_$8 # $9`)
 		return strings.TrimSpace(strings.ReplaceAll(r, "  ", " "))
-	}
+	}*/
 
 	// 5. Handle proto (left or right)"
 	reProtoLeft := regexp.MustCompile(`(\[\d+\])\s+([0-9./]+)\s*-\s*(udp|tcp)\s+([A-Z-]+)\s+(.*)`)
@@ -48,8 +48,8 @@ func FormatUfwRule(input string) string {
 	r = reProtoRight.ReplaceAllString(r, `$1 $2/$3 - $4 $5`)
 
 	// 6. Anywhere rules with numbers
-	re6 := regexp.MustCompile(`(\]\s+)([0-9]{2,})\s([A-Z]{2,}(-[A-Z]{2,3})?)`)
-	r = re6.ReplaceAllString(r, `$1Anywhere $2 $3`)
+	//re6 := regexp.MustCompile(`(\]\s+)([0-9]{2,})\s([A-Z]{2,}(-[A-Z]{2,3})?)`)
+	//r = re6.ReplaceAllString(r, `$1Anywhere $2 $3`)
 
 	// 7. IPv4 rules with protocol (no “- udp” form)
 	re7 := regexp.MustCompile(`(\]\s+)(([0-9]{1,3}\.){3}[0-9]{1,3}(/\d{1,2})?)\s([A-Z]{2,}-[A-Z]{2,3})`)
@@ -69,14 +69,14 @@ func FormatUfwRule(input string) string {
 	return r
 }
 
-func Shellout(command string) (error, string, string) {
+func Shellout(command string) (string, string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	return err, stdout.String(), stderr.String()
+	return stdout.String(), stderr.String(), err
 }
 
 func ValidatePort(text string, ch rune) bool {
@@ -119,9 +119,9 @@ func ParsePort(input string) string {
 }
 
 func ParseInterfaceIndex(input string, interfaces []string) int {
-	r := regexp.MustCompile(`.+ on (.+)`)
+	r := regexp.MustCompile(`.+_on_(.+)`)
 	matches := r.FindStringSubmatch(strings.TrimSpace(input))
-	index := len(interfaces) - 1
+	index := 0
 
 	if len(matches) == 0 {
 		return index
@@ -147,5 +147,12 @@ func SplitValueWithIface(s string) (val, iface string) {
 			return
 		}
 	}
+
+	r := regexp.MustCompile(`(.*)/tcp|udp`)
+	matches := r.FindStringSubmatch(s)
+	if len(matches) > 1 {
+		s = matches[1]
+	}
+
 	return s, ""
 }
