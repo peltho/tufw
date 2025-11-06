@@ -11,91 +11,127 @@ import (
 	"github.com/peltho/tufw/internal/core/domain"
 )
 
-func FormatUfwRule(input string) string {
-	r := input
+func FormatUfwRule(row string) string {
+	row = strings.TrimSpace(row)
+	row = regexp.MustCompile(`\s+`).ReplaceAllString(row, " ")            // normalize spaces
+	row = regexp.MustCompile(`\[ ?(\d+)\]`).ReplaceAllString(row, "[$1]") // normalize index
 
-	// 1. Normalize rule numbers [ 1] -> [1]
-	re1 := regexp.MustCompile(`\[\s*([0-9]+)\]`)
-	r = re1.ReplaceAllString(r, `[$1]`)
-
-	// 2. Remove (out)
-	r = strings.ReplaceAll(r, "(out)", "")
-
-	// 3. Remove "(v6)" suffixes
-	re3 := regexp.MustCompile(`\s*\(v6\)`)
-	r = re3.ReplaceAllString(r, "")
-
-	// 4. Convert "ALLOW IN" etc. -> "ALLOW-IN"
-	re4 := regexp.MustCompile(`\b(ALLOW|DENY|LIMIT|REJECT)\s+(IN|OUT|FWD)\b`)
-	r = re4.ReplaceAllString(r, `$1-$2`)
-
-	reFwd := regexp.MustCompile(
-		`(\[\d+\])\s+(\S+)` + // index, to
-			`(?:\s+(\d+)/(tcp|udp))?` + // optional port/proto
-			`\s+([A-Z-]+)\s+(\S+)\s+on\s+(\S+)\s+out\s+on\s+(\S+)` + // action, from, in/out iface
-			`(?:\s+#\s*(.*))?`) // optional comment
-
-	if reFwd.MatchString(r) {
-		matches := reFwd.FindStringSubmatch(r)
-		idx := matches[1]
-		to := matches[2]
-		port := matches[3]
-		proto := matches[4]
-		action := matches[5]
-		from := matches[6]
-		inIface := matches[7]
-		outIface := matches[8]
-		comment := matches[9]
-
-		toDisplay := to
-		if proto != "" {
-			toDisplay = fmt.Sprintf("%s/%s", to, proto)
-		}
-		if outIface != "" {
-			toDisplay = fmt.Sprintf("%s_on_%s", toDisplay, outIface)
-		}
-
-		fromDisplay := from
-		if inIface != "" {
-			fromDisplay = fmt.Sprintf("%s_on_%s", from, inIface)
-		}
-
-		if port != "" {
-			r = fmt.Sprintf("%s %s %s %s %s", idx, toDisplay, port, action, fromDisplay)
-		} else {
-			r = fmt.Sprintf("%s %s - %s %s", idx, toDisplay, action, fromDisplay)
-		}
-
-		if comment != "" {
-			r += " # " + strings.TrimSpace(comment)
-		}
-
-		return strings.Join(strings.Fields(r), " ")
+	// Extract comment part
+	comment := ""
+	if idx := strings.Index(row, "#"); idx != -1 {
+		comment = " " + strings.TrimSpace(row[idx:])
+		row = strings.TrimSpace(row[:idx])
 	}
 
-	// 5. Handle proto on the left (e.g. "10.0.0.0/24 - udp")
-	reProtoLeft := regexp.MustCompile(`(\[\d+\])\s+([0-9./]+)\s*-\s*(udp|tcp)\s+([A-Z-]+)\s+(.*)`)
-	r = reProtoLeft.ReplaceAllString(r, `$1 $2/$3 - $4 $5`)
+	// Extract interface info
+	var inIface, outIface string
+	// Detect and remove "out on <iface>"
+	if strings.Contains(row, " out on ") {
+		re := regexp.MustCompile(`out on ([^\s]+)`)
+		if m := re.FindStringSubmatch(row); len(m) > 1 {
+			outIface = m[1]
+		}
+		row = re.ReplaceAllString(row, "")
+	}
 
-	// 6. Handle proto on the right ("Anywhere - udp ...")
-	reProtoRight := regexp.MustCompile(`(\[\d+\])\s+(Anywhere|any)\s*-\s*(udp|tcp)\s+([A-Z-]+)\s+([0-9./]+)`)
-	r = reProtoRight.ReplaceAllString(r, `$1 $2/$3 - $4 $5`)
+	// Detect and remove "on <iface>" (any rule may have this)
+	if strings.Contains(row, " on ") {
+		re := regexp.MustCompile(` on ([^\s]+)`)
+		if m := re.FindStringSubmatch(row); len(m) > 1 {
+			inIface = m[1]
+		}
+		row = re.ReplaceAllString(row, "")
+	}
 
-	// 7. IPv4 rules with protocol but no “- udp” part
-	re7 := regexp.MustCompile(`(\]\s+)(([0-9]{1,3}\.){3}[0-9]{1,3}(/\d{1,2})?)\s([A-Z]{2,}-[A-Z]{2,3})`)
-	r = re7.ReplaceAllString(r, `$1$2 - $5`)
+	row = regexp.MustCompile(`\s+`).ReplaceAllString(row, " ")
+	tokens := strings.Fields(row)
+	if len(tokens) < 3 {
+		return row
+	}
 
-	// 8. Port/protocol adjustments (e.g., "443/tcp" → " /tcp 443")
-	re8 := regexp.MustCompile(`(\]\s+)(.*)\s([0-9]+)(/\w{3})`)
-	r = re8.ReplaceAllString(r, `$1$2$4 $3`)
+	index := tokens[0]
+	tokens = tokens[1:]
 
-	// 9. Remove extra "/proto" errors
-	re9 := regexp.MustCompile(`(\]\s+)/([a-z]{3})\s`)
-	r = re9.ReplaceAllString(r, `$1$2 `)
+	// Locate ALLOW or DENY
+	actionIdx := -1
+	for i, t := range tokens {
+		if t == "ALLOW" || t == "DENY" {
+			actionIdx = i
+			break
+		}
+	}
+	if actionIdx == -1 {
+		return row
+	}
 
-	// Clean up spacing
-	r = strings.Join(strings.Fields(r), " ")
-	return r
+	// Determine direction (IN/OUT/FWD)
+	direction := ""
+	if actionIdx+1 < len(tokens) {
+		next := tokens[actionIdx+1]
+		if next == "IN" || next == "OUT" || next == "FWD" {
+			direction = next
+		}
+	}
+
+	actionFull := tokens[actionIdx]
+	if direction != "" {
+		actionFull += "-" + direction
+	}
+
+	// Split into parts
+	toTokens := tokens[:actionIdx]
+	fromTokens := []string{}
+	if direction != "" && actionIdx+2 < len(tokens) {
+		fromTokens = tokens[actionIdx+2:]
+	} else if actionIdx+1 < len(tokens) {
+		fromTokens = tokens[actionIdx+1:]
+	}
+	fromPart := strings.Join(fromTokens, " ")
+
+	// Detect IP/port/protocol in 'to' part
+	toPart := strings.Join(toTokens, " ")
+	protocol := ""
+	port := "-"
+
+	reProto := regexp.MustCompile(`^(\S+)\s+(\d+)(?:/(\S+))?$`)
+	reDashProto := regexp.MustCompile(`^(\S+)\s+-\s+(\S+)$`)
+
+	if m := reProto.FindStringSubmatch(toPart); len(m) > 0 {
+		toPart = m[1]
+		port = m[2]
+		protocol = m[3]
+	} else if m := reDashProto.FindStringSubmatch(toPart); len(m) > 0 {
+		toPart = m[1]
+		port = "-"
+		protocol = m[2]
+	} else if strings.Contains(toPart, "/tcp") || strings.Contains(toPart, "/udp") {
+		// already embedded
+		parts := strings.SplitN(toPart, " ", 2)
+		toPart = parts[0]
+		if len(parts) > 1 {
+			port = parts[1]
+		}
+	}
+
+	if protocol != "" {
+		toPart += "/" + protocol
+	}
+
+	// Interface rules:
+	// - if we have outIface → attach to "to" side
+	// - if we have inIface → attach to "from" side
+	if outIface != "" {
+		toPart += "_on_" + outIface
+	}
+	if inIface != "" {
+		fromPart += "_on_" + inIface
+	}
+
+	formatted := fmt.Sprintf("%s %s %s %s %s%s",
+		index, strings.TrimSpace(toPart), port, actionFull, strings.TrimSpace(fromPart), comment)
+
+	formatted = strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(formatted, " "))
+	return formatted
 }
 
 func Shellout(command string) (string, string, error) {

@@ -139,8 +139,6 @@ func (t *Tui) CreateTable(rows []string) {
 			//b, _ := json.MarshalIndent(cellValues, "", "  ")
 			//log.Println("cellValues: " + string(b))
 
-			log.Println(utils.FormatUfwRule("[ 1] 3.3.3.3 on enp0s1 DENY FWD Anywhere on lo"))
-
 			// --- display values per column ---
 			alignment := tview.AlignCenter
 			value := ""

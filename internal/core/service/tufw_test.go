@@ -1,7 +1,6 @@
 package service
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -230,6 +229,22 @@ var tests = []struct {
 		formattedRow: "[1] 22 ALLOW-IN Anywhere",
 		expectedCmd:  "ufw allow in from any to any port 22",
 	},
+	{
+		name: "foo",
+		values: domain.FormValues{
+			To:           pointer.Of("3.3.3.3"),
+			Port:         pointer.Of(""),
+			Interface:    pointer.Of("enp0s1"),
+			InterfaceOut: pointer.Of("lo"),
+			Protocol:     pointer.Of(""),
+			Action:       "DENY FWD",
+			From:         pointer.Of(""),
+			Comment:      pointer.Of(""),
+		},
+		row:          "[ 1] 3.3.3.3 on lo DENY FWD Anywhere on enp0s1",
+		formattedRow: "[1] 3.3.3.3_on_lo - DENY-FWD Anywhere_on_enp0s1",
+		expectedCmd:  "ufw route deny in on enp0s1 out on lo from any to 3.3.3.3",
+	},
 }
 
 func populateForm(f *tview.Form, v domain.FormValues) {
@@ -316,9 +331,17 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 				if *tt.values.To == "" {
 					expected = "Anywhere" + expected
 				}
-				if (tt.values.Action == "ALLOW FWD" || tt.values.Action == "DENY FWD") && tt.values.InterfaceOut != nil {
-					expected = expected + "_on_" + *tt.values.InterfaceOut
+
+				_, proto, iface := utils.ParseFromOrTo(*tt.values.To)
+				if tt.values.InterfaceOut != nil && *tt.values.InterfaceOut != iface {
+					t.Errorf("expected value for Interface OUT: %s, got %s", *tt.values.InterfaceOut, iface)
 				}
+				if tt.values.Protocol != nil && proto != "" {
+					t.Errorf("expected value for Proto: %s, got %s", *tt.values.Protocol, proto)
+				}
+				/*if (tt.values.Action == "ALLOW FWD" || tt.values.Action == "DENY FWD") && tt.values.InterfaceOut != nil {
+					expected = expected + "_on_" + *tt.values.InterfaceOut
+				}*/
 				if cell.Text != expected {
 					t.Errorf("expected value for cell To: %q, got %q", expected, cell.Text)
 				}
@@ -348,9 +371,9 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 			} else {
 				expected = *tt.values.From
 			}
-			if tt.values.Interface != nil && *tt.values.Interface != "" && slices.Contains([]string{"ALLOW FWD", "DENY FWD"}, tt.values.Action) {
+			/*if tt.values.Interface != nil && *tt.values.Interface != "" && slices.Contains([]string{"ALLOW FWD", "DENY FWD"}, tt.values.Action) {
 				expected = expected + "_on_" + *tt.values.Interface
-			}
+			}*/
 
 			if cell.Text != expected {
 				t.Errorf("expected value for cell From: %q, got %q", expected, cell.Text)
