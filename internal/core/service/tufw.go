@@ -375,6 +375,7 @@ func (t *Tui) EditForm() {
 
 		toValue, proto, ninterfaceOut := utils.ParseFromOrTo(toCell)
 		fromValue, _, ninterface := utils.ParseFromOrTo(fromCell)
+		interfaceOptionIndex := utils.ParseInterfaceIndex(ninterface, interfaces)
 
 		protocolOptionIndex := 0
 		switch proto {
@@ -387,7 +388,6 @@ func (t *Tui) EditForm() {
 		}
 
 		portValue := utils.ParsePort(t.table.GetCell(row, 2).Text)
-		interfaceOptionIndex := utils.ParseInterfaceIndex(ninterface, interfaces)
 
 		actionText := t.table.GetCell(row, 3).Text
 

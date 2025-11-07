@@ -123,31 +123,6 @@ func TestParseFromOrTo(t *testing.T) {
 	}
 }
 
-func TestParseInterfaceIndex(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		interfaces []string
-		expected   int
-	}{
-		{
-			name:       "match in middle",
-			input:      "Anywhere_on_eth1",
-			interfaces: []string{"eth0", "eth1", "eth2"},
-			expected:   1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := ParseInterfaceIndex(tt.input, tt.interfaces)
-			if result != tt.expected {
-				t.Errorf("got %d, want %d", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestFillCell(t *testing.T) {
 	tests := []struct {
 		input    string

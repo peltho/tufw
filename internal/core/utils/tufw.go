@@ -202,14 +202,9 @@ func ParsePort(input string) string {
 }
 
 func ParseInterfaceIndex(input string, interfaces []string) int {
-	r := regexp.MustCompile(`(.*)_on_(.*)`)
-	matches := r.FindStringSubmatch(input)
-
-	if len(matches) > 2 {
-		for i, interfaceValue := range interfaces {
-			if matches[2] == interfaceValue {
-				return i
-			}
+	for i, interfaceValue := range interfaces {
+		if input == interfaceValue {
+			return i
 		}
 	}
 

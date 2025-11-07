@@ -1,0 +1,22 @@
+stages:
+  - test
+
+variables:
+  GO111MODULE: "on"
+  GOPROXY: "https://proxy.golang.org"
+
+test:
+  stage: test
+  image: golang:1.23-alpine
+  before_script:
+    - apk add --no-cache bash git
+    - go install gotest.tools/gotestsum@latest
+    - go mod download
+  script:
+    - gotestsum --junitfile junit-report.xml -- -cover ./...
+  artifacts:
+    when: always
+    reports:
+      junit: junit-report.xml
+    paths:
+      - junit-report.xml
