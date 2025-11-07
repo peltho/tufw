@@ -502,13 +502,15 @@ func (t *Tui) EditForm() {
 	})
 }
 
-func (t *Tui) EditRule(position int, object domain.FormValues) *string {
+func (t *Tui) EditRule(position int, object domain.FormValues, rows ...int) *string {
 	if object.Port == "" && object.Protocol == "" && object.Interface == "" && object.To == "" && object.From == "" {
 		return nil
 	}
 
-	if position > 1 {
-		position = position - 1
+	// For testing purposes (easy mock)
+	var rowCount = t.table.GetRowCount()
+	if len(rows) > 0 {
+		rowCount = rows[0]
 	}
 
 	if object.To == "" || object.To == "Anywhere" {
@@ -549,12 +551,16 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 
 	cmd := strings.Join(parts, " ")
 
-	dryCmd := fmt.Sprintf("ufw --dry-run insert %d %s %s", position, preCmd, cmd)
-	baseCmd := fmt.Sprintf("ufw insert %d %s %s", position, preCmd, cmd)
+	dryCmd := fmt.Sprintf("ufw --dry-run %s %s", preCmd, cmd)
+	baseCmd := fmt.Sprintf("ufw %s %s", preCmd, cmd)
+	if position < rowCount-1 {
+		dryCmd = fmt.Sprintf("ufw --dry-run insert %d %s %s", position, preCmd, cmd)
+		baseCmd = fmt.Sprintf("ufw insert %d %s %s", position, preCmd, cmd)
 
-	if strings.Contains(strings.ToLower(object.Action), "fwd") {
-		dryCmd = fmt.Sprintf("ufw --dry-run route insert %d %s %s", position, preCmd, cmd)
-		baseCmd = fmt.Sprintf("ufw route insert %d %s %s", position, preCmd, cmd)
+		if strings.Contains(strings.ToLower(object.Action), "fwd") {
+			dryCmd = fmt.Sprintf("ufw --dry-run route insert %d %s %s", position, preCmd, cmd)
+			baseCmd = fmt.Sprintf("ufw route insert %d %s %s", position, preCmd, cmd)
+		}
 	}
 
 	_, trace, err := shellout(dryCmd)
@@ -563,14 +569,6 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 		if _, trace, err := shellout(fmt.Sprintf("ufw --force delete %d", position)); err != nil {
 			log.Printf("Failed to delete previous rule: %s", trace)
 			return nil
-		}
-
-		// First and only rule to handle
-		if position == 1 {
-			data, _ := t.LoadUFWOutput()
-			if data[0] == "" {
-				baseCmd = "ufw route " + preCmd + " " + cmd
-			}
 		}
 
 		// Apply rule

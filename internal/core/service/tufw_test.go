@@ -358,7 +358,7 @@ func TestEditRule(t *testing.T) {
 				From:      "",
 				Comment:   "SSH rule",
 			},
-			expectedCmd: "ufw insert 2 allow in from any to 192.168.0.1 proto tcp port 22 comment 'SSH rule'",
+			expectedCmd: "ufw insert 3 allow in from any to 192.168.0.1 proto tcp port 22 comment 'SSH rule'",
 		},
 		{
 			name:     "Allow fwd route with interface out",
@@ -373,7 +373,7 @@ func TestEditRule(t *testing.T) {
 				From:         "10.0.0.0/8",
 				Comment:      "No port route",
 			},
-			expectedCmd: "ufw route insert 2 allow in on eth0 out on eth1 from 10.0.0.0/8 to 192.168.50.10 comment 'No port route'",
+			expectedCmd: "ufw route insert 3 allow in on eth0 out on eth1 from 10.0.0.0/8 to 192.168.50.10 comment 'No port route'",
 		},
 		{
 			name:     "Allow fwd route without interface out",
@@ -388,7 +388,7 @@ func TestEditRule(t *testing.T) {
 				From:         "10.0.0.0/8",
 				Comment:      "",
 			},
-			expectedCmd: "ufw route insert 2 allow in on eth0 from 10.0.0.0/8 to 192.168.50.10",
+			expectedCmd: "ufw route insert 3 allow in on eth0 from 10.0.0.0/8 to 192.168.50.10",
 		},
 	}
 
@@ -401,7 +401,7 @@ func TestEditRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := tui.EditRule(tt.position, tt.values)
+			v := tui.EditRule(tt.position, tt.values, 6)
 			if *v != tt.expectedCmd {
 				t.Errorf("expected command: %q, got %q", tt.expectedCmd, *v)
 			}
