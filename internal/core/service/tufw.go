@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -482,8 +481,6 @@ func (t *Tui) EditForm() {
 
 		t.form.AddButton("Save", func() {
 			editObject := t.ParseFormValues()
-			b, _ := json.MarshalIndent(editObject, "", "  ")
-			log.Println("edited: " + string(b))
 			t.EditRule(row, editObject)
 			t.app.SetFocus(t.table)
 		}).
@@ -510,21 +507,29 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 		return nil
 	}
 
-	if *object.To == "" {
+	if position > 1 {
+		position = position - 1
+	}
+
+	if *object.To == "" || *object.To == "Anywhere" {
 		*object.To = "any"
 	}
-	if *object.From == "" {
+	if *object.From == "" || *object.From == "Anywhere" {
 		*object.From = "any"
 	}
 
-	preCmd := strings.ToLower(object.Action)
-	if strings.Contains(object.Action, "FWD") {
-		tokens := strings.Split(object.Action, " ")
+	preCmd := strings.ToLower(strings.ReplaceAll(object.Action, "-", " "))
+	if strings.Contains(object.Action, "fwd") {
+		tokens := strings.Split(object.Action, "-")
 		if *object.InterfaceOut != "" {
 			preCmd = fmt.Sprintf("%s in on %s out on %s", strings.ToLower(tokens[0]), *object.Interface, *object.InterfaceOut)
 		} else {
 			preCmd = fmt.Sprintf("%s in on %s", strings.ToLower(tokens[0]), *object.Interface)
 		}
+	}
+
+	if *object.Interface != "" {
+		preCmd = preCmd + " on " + *object.Interface
 	}
 
 	var parts []string
@@ -547,23 +552,35 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 	dryCmd := fmt.Sprintf("ufw --dry-run insert %d %s %s", position, preCmd, cmd)
 	baseCmd := fmt.Sprintf("ufw insert %d %s %s", position, preCmd, cmd)
 
-	if object.Action == "ALLOW FWD" || object.Action == "DENY FWD" {
+	if strings.Contains(object.Action, "fwd") {
 		dryCmd = fmt.Sprintf("ufw --dry-run route insert %d %s %s", position, preCmd, cmd)
 		baseCmd = fmt.Sprintf("ufw route insert %d %s %s", position, preCmd, cmd)
 	}
 
-	_, _, err := shellout(dryCmd)
+	_, trace, err := shellout(dryCmd)
 	if err == nil {
 		// If replacing, delete first
-		shellout(fmt.Sprintf("ufw --force delete %d", position))
-
-		// Apply rule
-		if _, _, err = shellout(baseCmd); err != nil {
-			log.Printf("Failed to apply rule: %v", err)
+		if _, trace, err := shellout(fmt.Sprintf("ufw --force delete %d", position)); err != nil {
+			log.Printf("Failed to delete previous rule: %s", trace)
 			return nil
 		}
+
+		// First and only rule to handle
+		if position == 1 {
+			data, _ := t.LoadUFWOutput()
+			if data[0] == "" {
+				baseCmd = "ufw route " + preCmd + " " + cmd
+			}
+		}
+
+		// Apply rule
+		if _, trace, err := shellout(baseCmd); err != nil {
+			log.Printf("Failed to apply rule: %s - %s", trace, baseCmd)
+			return nil
+		}
+		log.Printf("Editing rule: %s", baseCmd)
 	} else {
-		log.Printf("Invalid rule: %v", err)
+		log.Printf("Invalid rule: %s - %s", trace, dryCmd)
 		return nil
 	}
 
@@ -638,15 +655,16 @@ func (t *Tui) CreateRule() {
 	baseCmd := "ufw " + preCmd + " " + cmd
 
 	// Run dry-run first
-	_, _, err := shellout(dryCmd)
+	_, trace, err := shellout(dryCmd)
 	if err == nil {
 		// Apply rule
-		if _, _, err = shellout(baseCmd); err != nil {
-			log.Printf("Failed to apply rule: %v", err)
+		if _, trace, err = shellout(baseCmd); err != nil {
+			log.Printf("Failed to apply rule: %s - %s", trace, baseCmd)
 			return
 		}
+		log.Printf("Creating rule: %s", baseCmd)
 	} else {
-		log.Printf("Invalid rule: %v", err)
+		log.Printf("Invalid rule: %s - %s", trace, dryCmd)
 		return
 	}
 

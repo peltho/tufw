@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -33,6 +34,7 @@ func main() {
 	}
 
 	colorFlag := flag.String("color", "cyan", "Color value (red, green, blue)")
+	logFlag := flag.String("log", "", "Log everything into a tufw.log file")
 	flag.Parse()
 
 	var color tcell.Color
@@ -49,12 +51,16 @@ func main() {
 		log.Fatalf("Invalid color: %s. Allowed values are red, green, blue.", *colorFlag)
 	}
 
-	f, err := os.OpenFile("tufw.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal(err)
+	if *logFlag != "" {
+		f, err := os.OpenFile(*logFlag, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.SetOutput(f)
+		defer f.Close()
+	} else {
+		log.SetOutput(io.Discard)
 	}
-	log.SetOutput(f)
-	defer f.Close()
 
 	tui := service.CreateApplication(color)
 	tui.Init()
