@@ -7,7 +7,6 @@ import (
 	"github.com/peltho/tufw/internal/core/domain"
 	"github.com/peltho/tufw/internal/core/utils"
 	"github.com/rivo/tview"
-	"gitlab.com/rythme/gommon/pointer"
 )
 
 var tests = []struct {
@@ -20,13 +19,13 @@ var tests = []struct {
 	{
 		name: "simple TCP rule",
 		values: domain.FormValues{
-			To:        pointer.Of("192.168.0.1"),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of("tcp"),
+			To:        "192.168.0.1",
+			Port:      "22",
+			Interface: "",
+			Protocol:  "tcp",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of("SSH rule"),
+			From:      "",
+			Comment:   "SSH rule",
 		},
 		row:          "[ 1] 192.168.0.1 22/tcp         ALLOW IN    Anywhere # SSH rule",
 		formattedRow: "[1] 192.168.0.1/tcp 22 ALLOW-IN Anywhere # SSH rule",
@@ -35,13 +34,13 @@ var tests = []struct {
 	{
 		name: "no proto",
 		values: domain.FormValues{
-			To:        pointer.Of("192.168.0.1"),
-			Port:      pointer.Of("80"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of(""),
+			To:        "192.168.0.1",
+			Port:      "80",
+			Interface: "",
+			Protocol:  "",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of(""),
+			From:      "",
+			Comment:   "",
 		},
 		row:          "[ 1] 192.168.0.1 80         ALLOW IN    Anywhere",
 		formattedRow: "[1] 192.168.0.1 80 ALLOW-IN Anywhere",
@@ -50,14 +49,14 @@ var tests = []struct {
 	{
 		name: "forward rule",
 		values: domain.FormValues{
-			To:           pointer.Of("192.168.1.100"),
-			Port:         pointer.Of("80"),
-			Interface:    pointer.Of("eth0"),
-			InterfaceOut: pointer.Of("eth1"),
-			Protocol:     pointer.Of("tcp"),
+			To:           "192.168.1.100",
+			Port:         "80",
+			Interface:    "eth0",
+			InterfaceOut: "eth1",
+			Protocol:     "tcp",
 			Action:       "DENY FWD",
-			From:         pointer.Of(""),
-			Comment:      pointer.Of(""),
+			From:         "",
+			Comment:      "",
 		},
 		row:          "[ 1] 192.168.1.100 80/tcp DENY FWD Anywhere on eth0 out on eth1",
 		formattedRow: "[1] 192.168.1.100/tcp_on_eth1 80 DENY-FWD Anywhere_on_eth0",
@@ -66,13 +65,13 @@ var tests = []struct {
 	{
 		name: "HTTP allow",
 		values: domain.FormValues{
-			To:        pointer.Of("192.168.0.2"),
-			Port:      pointer.Of("80"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of(""),
+			To:        "192.168.0.2",
+			Port:      "80",
+			Interface: "",
+			Protocol:  "",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of("Web"),
+			From:      "",
+			Comment:   "Web",
 		},
 		row:          "[ 1] 192.168.0.2 80 ALLOW IN Anywhere                       # Web",
 		formattedRow: "[1] 192.168.0.2 80 ALLOW-IN Anywhere # Web",
@@ -81,12 +80,12 @@ var tests = []struct {
 	{
 		name: "Deny udp to",
 		values: domain.FormValues{
-			To:        pointer.Of("10.0.0.0/24"),
-			Port:      pointer.Of(""),
-			Interface: pointer.Of(""),
+			To:        "10.0.0.0/24",
+			Port:      "",
+			Interface: "",
 			Action:    "DENY IN",
-			Protocol:  pointer.Of("udp"),
-			From:      pointer.Of(""),
+			Protocol:  "udp",
+			From:      "",
 		},
 		row:          "[ 1] 10.0.0.0/24 - udp DENY IN Anywhere",
 		formattedRow: "[1] 10.0.0.0/24/udp - DENY-IN Anywhere",
@@ -95,12 +94,12 @@ var tests = []struct {
 	{
 		name: "Allow udp from anywhere",
 		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of(""),
-			Interface: pointer.Of(""),
+			To:        "",
+			Port:      "",
+			Interface: "",
 			Action:    "ALLOW IN",
-			Protocol:  pointer.Of("udp"),
-			From:      pointer.Of("10.0.0.0/24"),
+			Protocol:  "udp",
+			From:      "10.0.0.0/24",
 		},
 		row:          "[ 1] Anywhere - udp ALLOW IN 10.0.0.0/24",
 		formattedRow: "[1] Anywhere/udp - ALLOW-IN 10.0.0.0/24",
@@ -109,14 +108,14 @@ var tests = []struct {
 	{
 		name: "Allow route forwarding with comment",
 		values: domain.FormValues{
-			To:           pointer.Of("172.16.0.5"),
-			Port:         pointer.Of("443"),
-			Interface:    pointer.Of("eth1"),
-			InterfaceOut: pointer.Of("eth2"),
-			Protocol:     pointer.Of("tcp"),
+			To:           "172.16.0.5",
+			Port:         "443",
+			Interface:    "eth1",
+			InterfaceOut: "eth2",
+			Protocol:     "tcp",
 			Action:       "ALLOW FWD",
-			From:         pointer.Of("10.0.0.0/8"),
-			Comment:      pointer.Of("HTTPS route"),
+			From:         "10.0.0.0/8",
+			Comment:      "HTTPS route",
 		},
 		row:          "[ 1] 172.16.0.5 443/tcp ALLOW FWD 10.0.0.0/8 on eth1 out on eth2 # HTTPS route",
 		formattedRow: "[1] 172.16.0.5/tcp_on_eth2 443 ALLOW-FWD 10.0.0.0/8_on_eth1 # HTTPS route",
@@ -125,14 +124,14 @@ var tests = []struct {
 	{
 		name: "Allow route with no port",
 		values: domain.FormValues{
-			To:           pointer.Of("192.168.50.10"),
-			Port:         pointer.Of(""),
-			Interface:    pointer.Of("eth0"),
-			InterfaceOut: pointer.Of("eth1"),
-			Protocol:     pointer.Of(""),
+			To:           "192.168.50.10",
+			Port:         "",
+			Interface:    "eth0",
+			InterfaceOut: "eth1",
+			Protocol:     "",
 			Action:       "ALLOW FWD",
-			From:         pointer.Of("10.0.0.0/8"),
-			Comment:      pointer.Of("No port route"),
+			From:         "10.0.0.0/8",
+			Comment:      "No port route",
 		},
 		row:          "[ 1] 192.168.50.10 ALLOW FWD 10.0.0.0/8 on eth0 out on eth1 # No port route",
 		formattedRow: "[1] 192.168.50.10_on_eth1 - ALLOW-FWD 10.0.0.0/8_on_eth0 # No port route",
@@ -141,13 +140,13 @@ var tests = []struct {
 	{
 		name: "Allow SSH from specific host",
 		values: domain.FormValues{
-			To:        pointer.Of("192.168.1.1"),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of("tcp"),
+			To:        "192.168.1.1",
+			Port:      "22",
+			Interface: "",
+			Protocol:  "tcp",
 			Action:    "ALLOW IN",
-			From:      pointer.Of("192.168.1.50"),
-			Comment:   pointer.Of("Admin host"),
+			From:      "192.168.1.50",
+			Comment:   "Admin host",
 		},
 		row:          "[ 1] 192.168.1.1 22/tcp ALLOW IN 192.168.1.50 # Admin host",
 		formattedRow: "[1] 192.168.1.1/tcp 22 ALLOW-IN 192.168.1.50 # Admin host",
@@ -156,13 +155,13 @@ var tests = []struct {
 	{
 		name: "Allow from subnet to any port 25 (SMTP)",
 		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of("25"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of("tcp"),
+			To:        "",
+			Port:      "25",
+			Interface: "",
+			Protocol:  "tcp",
 			Action:    "ALLOW IN",
-			From:      pointer.Of("192.168.10.0/24"),
-			Comment:   pointer.Of("SMTP inbound"),
+			From:      "192.168.10.0/24",
+			Comment:   "SMTP inbound",
 		},
 		row:          "[ 1] Anywhere 25/tcp ALLOW IN 192.168.10.0/24 # SMTP inbound",
 		formattedRow: "[1] Anywhere/tcp 25 ALLOW-IN 192.168.10.0/24 # SMTP inbound",
@@ -171,13 +170,13 @@ var tests = []struct {
 	{
 		name: "Deny outbound DNS",
 		values: domain.FormValues{
-			To:        pointer.Of("8.8.8.8"),
-			Port:      pointer.Of("53"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of("udp"),
+			To:        "8.8.8.8",
+			Port:      "53",
+			Interface: "",
+			Protocol:  "udp",
 			Action:    "DENY OUT",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of("Block Google DNS"),
+			From:      "",
+			Comment:   "Block Google DNS",
 		},
 		row:          "[ 1] 8.8.8.8 53/udp DENY OUT Anywhere # Block Google DNS",
 		formattedRow: "[1] 8.8.8.8/udp 53 DENY-OUT Anywhere # Block Google DNS",
@@ -186,13 +185,13 @@ var tests = []struct {
 	{
 		name: "Allow IPv6 SSH inbound",
 		values: domain.FormValues{
-			To:        pointer.Of("::1"),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of("tcp"),
+			To:        "::1",
+			Port:      "22",
+			Interface: "",
+			Protocol:  "tcp",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of("SSH v6"),
+			From:      "",
+			Comment:   "SSH v6",
 		},
 		row:          "[ 1] ::1 22/tcp ALLOW IN Anywhere (v6) # SSH v6",
 		formattedRow: "[1] ::1/tcp 22 ALLOW-IN Anywhere # SSH v6",
@@ -201,14 +200,14 @@ var tests = []struct {
 	{
 		name: "foo",
 		values: domain.FormValues{
-			To:           pointer.Of("3.3.3.3"),
-			Port:         pointer.Of(""),
-			Interface:    pointer.Of("enp0s1"),
-			InterfaceOut: pointer.Of("lo"),
-			Protocol:     pointer.Of(""),
+			To:           "3.3.3.3",
+			Port:         "",
+			Interface:    "enp0s1",
+			InterfaceOut: "lo",
+			Protocol:     "",
 			Action:       "DENY FWD",
-			From:         pointer.Of(""),
-			Comment:      pointer.Of(""),
+			From:         "",
+			Comment:      "",
 		},
 		row:          "[ 1] 3.3.3.3 on lo DENY FWD Anywhere on enp0s1",
 		formattedRow: "[1] 3.3.3.3_on_lo - DENY-FWD Anywhere_on_enp0s1",
@@ -217,13 +216,13 @@ var tests = []struct {
 	{
 		name: "open eth0",
 		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of("eth0"),
-			Protocol:  pointer.Of("tcp"),
+			To:        "",
+			Port:      "22",
+			Interface: "eth0",
+			Protocol:  "tcp",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of(""),
+			From:      "",
+			Comment:   "",
 		},
 		row:          "[ 1] Anywhere 22/tcp ALLOW IN Anywhere on eth0",
 		formattedRow: "[1] Anywhere/tcp 22 ALLOW-IN Anywhere_on_eth0",
@@ -232,13 +231,13 @@ var tests = []struct {
 	{
 		name: "ssh everywhere without To",
 		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of(""),
+			To:        "",
+			Port:      "22",
+			Interface: "",
+			Protocol:  "",
 			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of(""),
+			From:      "",
+			Comment:   "",
 		},
 		row:          "[ 1] 22                         ALLOW IN    Anywhere",
 		formattedRow: "[1] 22 ALLOW-IN Anywhere",
@@ -249,31 +248,21 @@ var tests = []struct {
 func populateForm(f *tview.Form, v domain.FormValues) {
 	f.Clear(true) // remove previous fields if any
 
-	f.AddInputField("To", *v.To, 10, nil, nil)
+	f.AddInputField("To", v.To, 10, nil, nil)
 
-	f.AddInputField("Port", *v.Port, 10, nil, nil)
+	f.AddInputField("Port", v.Port, 10, nil, nil)
 
-	if v.Interface != nil {
-		f.AddDropDown("Interface", []string{*v.Interface}, 0, nil)
-	} else {
-		f.AddDropDown("Interface", []string{""}, 0, nil)
-	}
+	f.AddDropDown("Interface", []string{v.Interface}, 0, nil)
 
-	if v.InterfaceOut != nil {
-		f.AddDropDown("Interface out", []string{*v.InterfaceOut}, 0, nil)
-	}
+	f.AddDropDown("Interface out", []string{v.InterfaceOut}, 0, nil)
 
-	f.AddDropDown("Protocol", []string{*v.Protocol}, 0, nil)
+	f.AddDropDown("Protocol", []string{v.Protocol}, 0, nil)
 
 	f.AddDropDown("Action *", []string{v.Action}, 0, nil)
 
-	f.AddInputField("From", *v.From, 10, nil, nil)
+	f.AddInputField("From", v.From, 10, nil, nil)
 
-	comment := ""
-	if v.Comment != nil {
-		comment = *v.Comment
-	}
-	f.AddInputField("Comment", comment, 10, nil, nil)
+	f.AddInputField("Comment", v.Comment, 10, nil, nil)
 }
 
 func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
@@ -361,13 +350,13 @@ func TestEditRule(t *testing.T) {
 			name:     "edit simple TCP rule",
 			position: 3,
 			values: domain.FormValues{
-				To:        pointer.Of("192.168.0.1"),
-				Port:      pointer.Of("22"),
-				Interface: pointer.Of(""),
-				Protocol:  pointer.Of("tcp"),
+				To:        "192.168.0.1",
+				Port:      "22",
+				Interface: "",
+				Protocol:  "tcp",
 				Action:    "ALLOW-IN",
-				From:      pointer.Of(""),
-				Comment:   pointer.Of("SSH rule"),
+				From:      "",
+				Comment:   "SSH rule",
 			},
 			expectedCmd: "ufw insert 2 allow in from any to 192.168.0.1 proto tcp port 22 comment 'SSH rule'",
 		},
@@ -375,14 +364,14 @@ func TestEditRule(t *testing.T) {
 			name:     "Allow fwd route with interface out",
 			position: 3,
 			values: domain.FormValues{
-				To:           pointer.Of("192.168.50.10"),
-				Port:         pointer.Of(""),
-				Interface:    pointer.Of("eth0"),
-				InterfaceOut: pointer.Of("eth1"),
-				Protocol:     pointer.Of(""),
+				To:           "192.168.50.10",
+				Port:         "",
+				Interface:    "eth0",
+				InterfaceOut: "eth1",
+				Protocol:     "",
 				Action:       "ALLOW-FWD",
-				From:         pointer.Of("10.0.0.0/8"),
-				Comment:      pointer.Of("No port route"),
+				From:         "10.0.0.0/8",
+				Comment:      "No port route",
 			},
 			expectedCmd: "ufw route insert 2 allow in on eth0 out on eth1 from 10.0.0.0/8 to 192.168.50.10 comment 'No port route'",
 		},
@@ -390,14 +379,14 @@ func TestEditRule(t *testing.T) {
 			name:     "Allow fwd route without interface out",
 			position: 3,
 			values: domain.FormValues{
-				To:           pointer.Of("192.168.50.10"),
-				Port:         pointer.Of(""),
-				Interface:    pointer.Of("eth0"),
-				InterfaceOut: pointer.Of(""),
-				Protocol:     pointer.Of(""),
+				To:           "192.168.50.10",
+				Port:         "",
+				Interface:    "eth0",
+				InterfaceOut: "",
+				Protocol:     "",
 				Action:       "ALLOW-FWD",
-				From:         pointer.Of("10.0.0.0/8"),
-				Comment:      pointer.Of(""),
+				From:         "10.0.0.0/8",
+				Comment:      "",
 			},
 			expectedCmd: "ufw route insert 2 allow in on eth0 from 10.0.0.0/8 to 192.168.50.10",
 		},

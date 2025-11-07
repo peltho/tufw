@@ -311,13 +311,13 @@ func (t *Tui) ParseFormValues() domain.FormValues {
 		case "To":
 			if f, ok := item.(*tview.InputField); ok {
 				val := f.GetText()
-				fv.To = &val
+				fv.To = val
 			}
 
 		case "Port":
 			if f, ok := item.(*tview.InputField); ok {
 				val := f.GetText()
-				fv.Port = &val
+				fv.Port = val
 			}
 
 		case "Action *":
@@ -329,31 +329,31 @@ func (t *Tui) ParseFormValues() domain.FormValues {
 		case "Interface":
 			if d, ok := item.(*tview.DropDown); ok {
 				_, val := d.GetCurrentOption()
-				fv.Interface = &val
+				fv.Interface = val
 			}
 
 		case "Interface out":
 			if d, ok := item.(*tview.DropDown); ok {
 				_, val := d.GetCurrentOption()
-				fv.InterfaceOut = &val
+				fv.InterfaceOut = val
 			}
 
 		case "Protocol":
 			if d, ok := item.(*tview.DropDown); ok {
 				_, val := d.GetCurrentOption()
-				fv.Protocol = &val
+				fv.Protocol = val
 			}
 
 		case "From":
 			if f, ok := item.(*tview.InputField); ok {
 				val := f.GetText()
-				fv.From = &val
+				fv.From = val
 			}
 
 		case "Comment":
 			if f, ok := item.(*tview.InputField); ok {
 				val := f.GetText()
-				fv.Comment = &val
+				fv.Comment = val
 			}
 		}
 	}
@@ -503,7 +503,7 @@ func (t *Tui) EditForm() {
 }
 
 func (t *Tui) EditRule(position int, object domain.FormValues) *string {
-	if *object.Port == "" && *object.Protocol == "" && *object.Interface == "" && *object.To == "" && *object.From == "" {
+	if object.Port == "" && object.Protocol == "" && object.Interface == "" && object.To == "" && object.From == "" {
 		return nil
 	}
 
@@ -511,39 +511,39 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 		position = position - 1
 	}
 
-	if *object.To == "" || *object.To == "Anywhere" {
-		*object.To = "any"
+	if object.To == "" || object.To == "Anywhere" {
+		object.To = "any"
 	}
-	if *object.From == "" || *object.From == "Anywhere" {
-		*object.From = "any"
+	if object.From == "" || object.From == "Anywhere" {
+		object.From = "any"
 	}
 
 	preCmd := strings.ToLower(strings.ReplaceAll(object.Action, "-", " "))
-	if *object.Interface != "" {
-		preCmd = fmt.Sprintf("%s on %s", preCmd, *object.Interface)
+	if object.Interface != "" {
+		preCmd = fmt.Sprintf("%s on %s", preCmd, object.Interface)
 	}
 
 	if strings.Contains(strings.ToLower(object.Action), "fwd") {
 		tokens := strings.Split(object.Action, "-")
-		if *object.InterfaceOut != "" {
-			preCmd = fmt.Sprintf("%s in on %s out on %s", strings.ToLower(tokens[0]), *object.Interface, *object.InterfaceOut)
+		if object.InterfaceOut != "" {
+			preCmd = fmt.Sprintf("%s in on %s out on %s", strings.ToLower(tokens[0]), object.Interface, object.InterfaceOut)
 		} else {
-			preCmd = fmt.Sprintf("%s in on %s", strings.ToLower(tokens[0]), *object.Interface)
+			preCmd = fmt.Sprintf("%s in on %s", strings.ToLower(tokens[0]), object.Interface)
 		}
 	}
 
 	var parts []string
-	parts = append(parts, "from", *object.From, "to", *object.To)
+	parts = append(parts, "from", object.From, "to", object.To)
 
-	if *object.Protocol != "" {
-		parts = append(parts, "proto", *object.Protocol)
+	if object.Protocol != "" {
+		parts = append(parts, "proto", object.Protocol)
 	}
-	if *object.Port != "" {
-		parts = append(parts, "port", *object.Port)
+	if object.Port != "" {
+		parts = append(parts, "port", object.Port)
 	}
-	if *object.Comment != "" {
+	if object.Comment != "" {
 		// Escape single quotes inside comment
-		escaped := strings.ReplaceAll(*object.Comment, "'", "''")
+		escaped := strings.ReplaceAll(object.Comment, "'", "''")
 		parts = append(parts, "comment", fmt.Sprintf("'%s'", escaped))
 	}
 
