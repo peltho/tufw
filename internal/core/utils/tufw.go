@@ -13,46 +13,61 @@ import (
 
 func FormatUfwRule(row string) string {
 	row = strings.TrimSpace(row)
-	row = regexp.MustCompile(`\s+`).ReplaceAllString(row, " ")            // normalize spaces
-	row = regexp.MustCompile(`\[ ?(\d+)\]`).ReplaceAllString(row, "[$1]") // normalize index
+	row = regexp.MustCompile(`\s+`).ReplaceAllString(row, " ")
+	row = regexp.MustCompile(`\[ ?(\d+)\]`).ReplaceAllString(row, "[$1]")
 
-	// Extract comment part
+	removeV6 := regexp.MustCompile(`(\w)\s*\(v6\)`)
+	row = removeV6.ReplaceAllString(row, `$1`)
+
+	// --- Extract index ---
+	reIndex := regexp.MustCompile(`^\[(\d+)\]`)
+	index := ""
+	if m := reIndex.FindStringSubmatch(row); len(m) > 1 {
+		index = "[" + m[1] + "]"
+		row = strings.TrimSpace(reIndex.ReplaceAllString(row, ""))
+	}
+
+	// --- Extract comment ---
 	comment := ""
 	if idx := strings.Index(row, "#"); idx != -1 {
 		comment = " " + strings.TrimSpace(row[idx:])
 		row = strings.TrimSpace(row[:idx])
 	}
 
-	// Extract interface info
-	var inIface, outIface string
-	// Detect and remove "out on <iface>"
+	// --- Interfaces ---
+	var outIface, inIface string
+
+	// Case 1: explicit "out on"
 	if strings.Contains(row, " out on ") {
-		re := regexp.MustCompile(`out on ([^\s]+)`)
-		if m := re.FindStringSubmatch(row); len(m) > 1 {
-			outIface = m[1]
-		}
-		row = re.ReplaceAllString(row, "")
-	}
-
-	// Detect and remove "on <iface>" (any rule may have this)
-	if strings.Contains(row, " on ") {
-		re := regexp.MustCompile(` on ([^\s]+)`)
-		if m := re.FindStringSubmatch(row); len(m) > 1 {
+		re := regexp.MustCompile(`on ([^\s]+) out on ([^\s]+)`)
+		if m := re.FindStringSubmatch(row); len(m) > 2 {
 			inIface = m[1]
+			outIface = m[2]
 		}
 		row = re.ReplaceAllString(row, "")
+	} else {
+		// Case 2: generic "on"
+		onRe := regexp.MustCompile(`\bon\s+([^\s]+)`)
+		matches := onRe.FindAllStringSubmatch(row, -1)
+		// Basic rule with an interface IN
+		if len(matches) > 0 {
+			inIface = matches[0][1]
+		}
+		// FWD rule with interface IN and OUT (overriding above)
+		if len(matches) > 1 {
+			inIface = matches[1][1]
+			outIface = matches[0][1]
+		}
+		row = onRe.ReplaceAllString(row, "")
 	}
 
-	row = regexp.MustCompile(`\s+`).ReplaceAllString(row, " ")
+	row = strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(row, " "))
 	tokens := strings.Fields(row)
 	if len(tokens) < 3 {
-		return row
+		return fmt.Sprintf("%s %s", index, row)
 	}
 
-	index := tokens[0]
-	tokens = tokens[1:]
-
-	// Locate ALLOW or DENY
+	// --- Find ALLOW / DENY ---
 	actionIdx := -1
 	for i, t := range tokens {
 		if t == "ALLOW" || t == "DENY" {
@@ -61,65 +76,69 @@ func FormatUfwRule(row string) string {
 		}
 	}
 	if actionIdx == -1 {
-		return row
+		return fmt.Sprintf("%s %s", index, row)
 	}
 
-	// Determine direction (IN/OUT/FWD)
+	// --- Direction ---
 	direction := ""
 	if actionIdx+1 < len(tokens) {
-		next := tokens[actionIdx+1]
-		if next == "IN" || next == "OUT" || next == "FWD" {
-			direction = next
+		if dir := tokens[actionIdx+1]; dir == "IN" || dir == "OUT" || dir == "FWD" {
+			direction = dir
 		}
 	}
-
 	actionFull := tokens[actionIdx]
 	if direction != "" {
 		actionFull += "-" + direction
 	}
 
-	// Split into parts
+	// --- Split sides ---
 	toTokens := tokens[:actionIdx]
 	fromTokens := []string{}
-	if direction != "" && actionIdx+2 < len(tokens) {
+	if actionIdx+2 < len(tokens) && (tokens[actionIdx+1] == "IN" || tokens[actionIdx+1] == "OUT" || tokens[actionIdx+1] == "FWD") {
 		fromTokens = tokens[actionIdx+2:]
 	} else if actionIdx+1 < len(tokens) {
 		fromTokens = tokens[actionIdx+1:]
 	}
+
+	toPart := strings.Join(toTokens, " ")
 	fromPart := strings.Join(fromTokens, " ")
 
-	// Detect IP/port/protocol in 'to' part
-	toPart := strings.Join(toTokens, " ")
-	protocol := ""
+	// --- Port / protocol ---
 	port := "-"
-
-	reProto := regexp.MustCompile(`^(\S+)\s+(\d+)(?:/(\S+))?$`)
+	proto := ""
+	rePortProto := regexp.MustCompile(`^(\S+)\s+(\d+)(?:/(\S+))?$`)
 	reDashProto := regexp.MustCompile(`^(\S+)\s+-\s+(\S+)$`)
 
-	if m := reProto.FindStringSubmatch(toPart); len(m) > 0 {
+	if m := rePortProto.FindStringSubmatch(toPart); len(m) > 0 {
 		toPart = m[1]
 		port = m[2]
-		protocol = m[3]
+		proto = m[3]
 	} else if m := reDashProto.FindStringSubmatch(toPart); len(m) > 0 {
 		toPart = m[1]
 		port = "-"
-		protocol = m[2]
+		proto = m[2]
 	} else if strings.Contains(toPart, "/tcp") || strings.Contains(toPart, "/udp") {
-		// already embedded
-		parts := strings.SplitN(toPart, " ", 2)
-		toPart = parts[0]
-		if len(parts) > 1 {
+		if !strings.Contains(toPart, " ") {
+			// ok
+		} else {
+			parts := strings.SplitN(toPart, " ", 2)
+			toPart = parts[0]
 			port = parts[1]
 		}
 	}
-
-	if protocol != "" {
-		toPart += "/" + protocol
+	if proto != "" {
+		toPart += "/" + proto
 	}
 
-	// Interface rules:
-	// - if we have outIface → attach to "to" side
-	// - if we have inIface → attach to "from" side
+	if port == "-" {
+		// If toPart is a pure number, it's actually the port
+		if regexp.MustCompile(`^\d+$`).MatchString(toPart) {
+			port = toPart
+			toPart = ""
+		}
+	}
+
+	// --- Attach interfaces ---
 	if outIface != "" {
 		toPart += "_on_" + outIface
 	}
@@ -129,7 +148,6 @@ func FormatUfwRule(row string) string {
 
 	formatted := fmt.Sprintf("%s %s %s %s %s%s",
 		index, strings.TrimSpace(toPart), port, actionFull, strings.TrimSpace(fromPart), comment)
-
 	formatted = strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(formatted, " "))
 	return formatted
 }

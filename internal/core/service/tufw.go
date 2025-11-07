@@ -128,16 +128,12 @@ func (t *Tui) CreateTable(rows []string) {
 				break
 			}
 
-			log.Println("input: " + row)
 			formattedRow := utils.FormatUfwRule(row)
-			log.Println("input formatted: " + formattedRow)
+
 			cellValues := utils.FillCell(formattedRow)
 			if cellValues == nil {
 				continue
 			}
-
-			//b, _ := json.MarshalIndent(cellValues, "", "  ")
-			//log.Println("cellValues: " + string(b))
 
 			// --- display values per column ---
 			alignment := tview.AlignCenter
@@ -186,11 +182,6 @@ func (t *Tui) CreateTable(rows []string) {
 func (t *Tui) ReloadTable() {
 	t.table.Clear()
 	data, _ := t.LoadUFWOutput()
-
-	/*var rules []string
-	for _, row := range data {
-		rules = append(rules, utils.FormatUfwRule(row))
-	}*/
 
 	t.CreateTable(data)
 }

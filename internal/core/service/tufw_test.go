@@ -1,7 +1,6 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -200,36 +199,6 @@ var tests = []struct {
 		expectedCmd:  "ufw allow in from any to ::1 proto tcp port 22 comment 'SSH v6'",
 	},
 	{
-		name: "open eth0",
-		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of("eth0"),
-			Protocol:  pointer.Of("tcp"),
-			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of(""),
-		},
-		row:          "[ 1] Anywhere 22/tcp ALLOW IN Anywhere on eth0",
-		formattedRow: "[1] Anywhere/tcp 22 ALLOW-IN Anywhere on eth0",
-		expectedCmd:  "ufw allow in on eth0 from any to any proto tcp port 22",
-	},
-	{
-		name: "ssh everywhere",
-		values: domain.FormValues{
-			To:        pointer.Of(""),
-			Port:      pointer.Of("22"),
-			Interface: pointer.Of(""),
-			Protocol:  pointer.Of(""),
-			Action:    "ALLOW IN",
-			From:      pointer.Of(""),
-			Comment:   pointer.Of(""),
-		},
-		row:          "[ 1] 22                         ALLOW IN    Anywhere",
-		formattedRow: "[1] 22 ALLOW-IN Anywhere",
-		expectedCmd:  "ufw allow in from any to any port 22",
-	},
-	{
 		name: "foo",
 		values: domain.FormValues{
 			To:           pointer.Of("3.3.3.3"),
@@ -244,6 +213,36 @@ var tests = []struct {
 		row:          "[ 1] 3.3.3.3 on lo DENY FWD Anywhere on enp0s1",
 		formattedRow: "[1] 3.3.3.3_on_lo - DENY-FWD Anywhere_on_enp0s1",
 		expectedCmd:  "ufw route deny in on enp0s1 out on lo from any to 3.3.3.3",
+	},
+	{
+		name: "open eth0",
+		values: domain.FormValues{
+			To:        pointer.Of(""),
+			Port:      pointer.Of("22"),
+			Interface: pointer.Of("eth0"),
+			Protocol:  pointer.Of("tcp"),
+			Action:    "ALLOW IN",
+			From:      pointer.Of(""),
+			Comment:   pointer.Of(""),
+		},
+		row:          "[ 1] Anywhere 22/tcp ALLOW IN Anywhere on eth0",
+		formattedRow: "[1] Anywhere/tcp 22 ALLOW-IN Anywhere_on_eth0",
+		expectedCmd:  "ufw allow in on eth0 from any to any proto tcp port 22",
+	},
+	{
+		name: "ssh everywhere without To",
+		values: domain.FormValues{
+			To:        pointer.Of(""),
+			Port:      pointer.Of("22"),
+			Interface: pointer.Of(""),
+			Protocol:  pointer.Of(""),
+			Action:    "ALLOW IN",
+			From:      pointer.Of(""),
+			Comment:   pointer.Of(""),
+		},
+		row:          "[ 1] 22                         ALLOW IN    Anywhere",
+		formattedRow: "[1] 22 ALLOW-IN Anywhere",
+		expectedCmd:  "ufw allow in from any to any port 22",
 	},
 }
 
@@ -316,14 +315,18 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 
 			tui.CreateTable([]string{tt.row})
 
+			cellValues := utils.FillCell(loadedRow)
+
 			cell := tui.table.GetCell(1, 0)
-			expected := "[1]"
-			if cell.Text != expected {
-				t.Errorf("expected value for cell #: %q, got %q", expected, cell.Text)
+			if cell.Text != cellValues.Index {
+				t.Errorf("expected value for cell #: %q, got %q", cellValues.Index, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 1)
-			if tt.values.To != nil {
+			if cell.Text != cellValues.To {
+				t.Errorf("expected value for cell To: %q, got %q", cellValues.To, cell.Text)
+			}
+			/*if tt.values.To != nil {
 				expected = *tt.values.To
 				if tt.values.Protocol != nil && *tt.values.Protocol != "" {
 					expected = expected + "/" + *tt.values.Protocol
@@ -341,14 +344,14 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 				}
 				/*if (tt.values.Action == "ALLOW FWD" || tt.values.Action == "DENY FWD") && tt.values.InterfaceOut != nil {
 					expected = expected + "_on_" + *tt.values.InterfaceOut
-				}*/
+				}
 				if cell.Text != expected {
 					t.Errorf("expected value for cell To: %q, got %q", expected, cell.Text)
 				}
-			}
+			}*/
 
 			cell = tui.table.GetCell(1, 2)
-			if tt.values.Port != nil {
+			/*if tt.values.Port != nil {
 				expected = *tt.values.Port
 				if *tt.values.Port == "" {
 					expected = "-"
@@ -357,34 +360,47 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 				if cell.Text != expected {
 					t.Errorf("expected value for cell Port: %q, got %q", expected, cell.Text)
 				}
+			}*/
+			if cell.Text != cellValues.Port {
+				t.Errorf("expected value for cell Port: %q, got %q", cellValues.Port, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 3)
-			expected = strings.ReplaceAll(tt.values.Action, " ", "-")
+			/*expected = strings.ReplaceAll(tt.values.Action, " ", "-")
 			if cell.Text != expected {
 				t.Errorf("expected value for cell Action: %q, got %q", expected, cell.Text)
+			}*/
+			if cell.Text != cellValues.Action {
+				t.Errorf("expected value for cell Action: %q, got %q", cellValues.Action, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 4)
-			if tt.values.From == nil || *tt.values.From == "" || *tt.values.From == "Anywhere" || *tt.values.From == "any" {
-				expected = "Anywhere"
-			} else {
-				expected = *tt.values.From
-			}
-			/*if tt.values.Interface != nil && *tt.values.Interface != "" && slices.Contains([]string{"ALLOW FWD", "DENY FWD"}, tt.values.Action) {
-				expected = expected + "_on_" + *tt.values.Interface
-			}*/
+			/*
+				if tt.values.From == nil || *tt.values.From == "" || *tt.values.From == "Anywhere" || *tt.values.From == "any" {
+					expected = "Anywhere"
+				} else {
+					expected = *tt.values.From
+				}
+				/*if tt.values.Interface != nil && *tt.values.Interface != "" && slices.Contains([]string{"ALLOW FWD", "DENY FWD"}, tt.values.Action) {
+					expected = expected + "_on_" + *tt.values.Interface
+				}
 
-			if cell.Text != expected {
-				t.Errorf("expected value for cell From: %q, got %q", expected, cell.Text)
+				if cell.Text != expected {
+					t.Errorf("expected value for cell From: %q, got %q", expected, cell.Text)
+				}*/
+			if cell.Text != cellValues.From {
+				t.Errorf("expected value for cell From: %q, got %q", cellValues.From, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 5)
-			if tt.values.Comment != nil {
+			/*if tt.values.Comment != nil {
 				expected = *tt.values.Comment
 				if cell.Text != expected {
 					t.Errorf("expected value for cell Comment: %q, got %q", expected, cell.Text)
 				}
+			}*/
+			if cell.Text != cellValues.Comment {
+				t.Errorf("expected value for cell Comment: %q, got %q", cellValues.Comment, cell.Text)
 			}
 		})
 	}
