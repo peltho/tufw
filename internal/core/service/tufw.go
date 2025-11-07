@@ -519,17 +519,17 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 	}
 
 	preCmd := strings.ToLower(strings.ReplaceAll(object.Action, "-", " "))
-	if strings.Contains(object.Action, "fwd") {
+	if *object.Interface != "" {
+		preCmd = fmt.Sprintf("%s on %s", preCmd, *object.Interface)
+	}
+
+	if strings.Contains(strings.ToLower(object.Action), "fwd") {
 		tokens := strings.Split(object.Action, "-")
 		if *object.InterfaceOut != "" {
 			preCmd = fmt.Sprintf("%s in on %s out on %s", strings.ToLower(tokens[0]), *object.Interface, *object.InterfaceOut)
 		} else {
 			preCmd = fmt.Sprintf("%s in on %s", strings.ToLower(tokens[0]), *object.Interface)
 		}
-	}
-
-	if *object.Interface != "" {
-		preCmd = preCmd + " on " + *object.Interface
 	}
 
 	var parts []string
@@ -552,7 +552,7 @@ func (t *Tui) EditRule(position int, object domain.FormValues) *string {
 	dryCmd := fmt.Sprintf("ufw --dry-run insert %d %s %s", position, preCmd, cmd)
 	baseCmd := fmt.Sprintf("ufw insert %d %s %s", position, preCmd, cmd)
 
-	if strings.Contains(object.Action, "fwd") {
+	if strings.Contains(strings.ToLower(object.Action), "fwd") {
 		dryCmd = fmt.Sprintf("ufw --dry-run route insert %d %s %s", position, preCmd, cmd)
 		baseCmd = fmt.Sprintf("ufw route insert %d %s %s", position, preCmd, cmd)
 	}

@@ -326,79 +326,23 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 			if cell.Text != cellValues.To {
 				t.Errorf("expected value for cell To: %q, got %q", cellValues.To, cell.Text)
 			}
-			/*if tt.values.To != nil {
-				expected = *tt.values.To
-				if tt.values.Protocol != nil && *tt.values.Protocol != "" {
-					expected = expected + "/" + *tt.values.Protocol
-				}
-				if *tt.values.To == "" {
-					expected = "Anywhere" + expected
-				}
-
-				_, proto, iface := utils.ParseFromOrTo(*tt.values.To)
-				if tt.values.InterfaceOut != nil && *tt.values.InterfaceOut != iface {
-					t.Errorf("expected value for Interface OUT: %s, got %s", *tt.values.InterfaceOut, iface)
-				}
-				if tt.values.Protocol != nil && proto != "" {
-					t.Errorf("expected value for Proto: %s, got %s", *tt.values.Protocol, proto)
-				}
-				/*if (tt.values.Action == "ALLOW FWD" || tt.values.Action == "DENY FWD") && tt.values.InterfaceOut != nil {
-					expected = expected + "_on_" + *tt.values.InterfaceOut
-				}
-				if cell.Text != expected {
-					t.Errorf("expected value for cell To: %q, got %q", expected, cell.Text)
-				}
-			}*/
 
 			cell = tui.table.GetCell(1, 2)
-			/*if tt.values.Port != nil {
-				expected = *tt.values.Port
-				if *tt.values.Port == "" {
-					expected = "-"
-				}
-
-				if cell.Text != expected {
-					t.Errorf("expected value for cell Port: %q, got %q", expected, cell.Text)
-				}
-			}*/
 			if cell.Text != cellValues.Port {
 				t.Errorf("expected value for cell Port: %q, got %q", cellValues.Port, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 3)
-			/*expected = strings.ReplaceAll(tt.values.Action, " ", "-")
-			if cell.Text != expected {
-				t.Errorf("expected value for cell Action: %q, got %q", expected, cell.Text)
-			}*/
 			if cell.Text != cellValues.Action {
 				t.Errorf("expected value for cell Action: %q, got %q", cellValues.Action, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 4)
-			/*
-				if tt.values.From == nil || *tt.values.From == "" || *tt.values.From == "Anywhere" || *tt.values.From == "any" {
-					expected = "Anywhere"
-				} else {
-					expected = *tt.values.From
-				}
-				/*if tt.values.Interface != nil && *tt.values.Interface != "" && slices.Contains([]string{"ALLOW FWD", "DENY FWD"}, tt.values.Action) {
-					expected = expected + "_on_" + *tt.values.Interface
-				}
-
-				if cell.Text != expected {
-					t.Errorf("expected value for cell From: %q, got %q", expected, cell.Text)
-				}*/
 			if cell.Text != cellValues.From {
 				t.Errorf("expected value for cell From: %q, got %q", cellValues.From, cell.Text)
 			}
 
 			cell = tui.table.GetCell(1, 5)
-			/*if tt.values.Comment != nil {
-				expected = *tt.values.Comment
-				if cell.Text != expected {
-					t.Errorf("expected value for cell Comment: %q, got %q", expected, cell.Text)
-				}
-			}*/
 			if cell.Text != cellValues.Comment {
 				t.Errorf("expected value for cell Comment: %q, got %q", cellValues.Comment, cell.Text)
 			}
@@ -409,49 +353,53 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 func TestEditRule(t *testing.T) {
 	var tests = []struct {
 		name        string
+		position    int
 		values      domain.FormValues
 		expectedCmd string
 	}{
 		{
-			name: "edit simple TCP rule",
+			name:     "edit simple TCP rule",
+			position: 3,
 			values: domain.FormValues{
 				To:        pointer.Of("192.168.0.1"),
 				Port:      pointer.Of("22"),
 				Interface: pointer.Of(""),
 				Protocol:  pointer.Of("tcp"),
-				Action:    "ALLOW IN",
+				Action:    "ALLOW-IN",
 				From:      pointer.Of(""),
 				Comment:   pointer.Of("SSH rule"),
 			},
-			expectedCmd: "ufw insert 1 allow in from any to 192.168.0.1 proto tcp port 22 comment 'SSH rule'",
+			expectedCmd: "ufw insert 2 allow in from any to 192.168.0.1 proto tcp port 22 comment 'SSH rule'",
 		},
 		{
-			name: "Allow fwd route with interface out",
+			name:     "Allow fwd route with interface out",
+			position: 3,
 			values: domain.FormValues{
 				To:           pointer.Of("192.168.50.10"),
 				Port:         pointer.Of(""),
 				Interface:    pointer.Of("eth0"),
 				InterfaceOut: pointer.Of("eth1"),
 				Protocol:     pointer.Of(""),
-				Action:       "ALLOW FWD",
+				Action:       "ALLOW-FWD",
 				From:         pointer.Of("10.0.0.0/8"),
 				Comment:      pointer.Of("No port route"),
 			},
-			expectedCmd: "ufw route insert 1 allow in on eth0 out on eth1 from 10.0.0.0/8 to 192.168.50.10 comment 'No port route'",
+			expectedCmd: "ufw route insert 2 allow in on eth0 out on eth1 from 10.0.0.0/8 to 192.168.50.10 comment 'No port route'",
 		},
 		{
-			name: "Allow fwd route without interface out",
+			name:     "Allow fwd route without interface out",
+			position: 3,
 			values: domain.FormValues{
 				To:           pointer.Of("192.168.50.10"),
 				Port:         pointer.Of(""),
 				Interface:    pointer.Of("eth0"),
 				InterfaceOut: pointer.Of(""),
 				Protocol:     pointer.Of(""),
-				Action:       "ALLOW FWD",
+				Action:       "ALLOW-FWD",
 				From:         pointer.Of("10.0.0.0/8"),
 				Comment:      pointer.Of(""),
 			},
-			expectedCmd: "ufw route insert 1 allow in on eth0 from 10.0.0.0/8 to 192.168.50.10",
+			expectedCmd: "ufw route insert 2 allow in on eth0 from 10.0.0.0/8 to 192.168.50.10",
 		},
 	}
 
@@ -464,7 +412,7 @@ func TestEditRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := tui.EditRule(1, tt.values)
+			v := tui.EditRule(tt.position, tt.values)
 			if *v != tt.expectedCmd {
 				t.Errorf("expected command: %q, got %q", tt.expectedCmd, *v)
 			}

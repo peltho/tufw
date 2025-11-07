@@ -124,7 +124,6 @@ func TestParseFromOrTo(t *testing.T) {
 }
 
 func TestParseInterfaceIndex(t *testing.T) {
-
 	tests := []struct {
 		name       string
 		input      string
