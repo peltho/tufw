@@ -12,8 +12,10 @@ import (
 	"github.com/rivo/tview"
 )
 
-var NUMBER_OF_V6_RULES = 0
-var shellout = utils.Shellout
+var (
+	NUMBER_OF_V6_RULES = 0
+	shellout           = utils.Shellout
+)
 
 type Tui struct {
 	app        *tview.Application
@@ -508,7 +510,7 @@ func (t *Tui) EditRule(position int, object domain.FormValues, rows ...int) *str
 	}
 
 	// For testing purposes (easy mock)
-	var rowCount = t.table.GetRowCount()
+	rowCount := t.table.GetRowCount()
 	if len(rows) > 0 {
 		rowCount = rows[0]
 	}
@@ -588,7 +590,6 @@ func (t *Tui) EditRule(position int, object domain.FormValues, rows ...int) *str
 }
 
 func (t *Tui) CreateRule() {
-
 	var ninterfaceOut string
 	if item, ok := t.form.GetFormItemByLabel("Interface out").(*tview.DropDown); ok {
 		_, ninterfaceOut = item.GetCurrentOption()
@@ -781,10 +782,15 @@ func (t *Tui) CreateLayout() *tview.Pages {
 }
 
 func (t *Tui) Build(data []string) {
-
 	root := t.CreateLayout()
 
-	if len(data) <= 1 {
+	status, _, err := shellout(" ufw status | awk -F': ' '/^Status:/ {printf \"%s\", $2}'")
+	if err != nil {
+		log.Printf("ufw status error: %v", err)
+		t.app.Stop()
+	}
+
+	if status != "active" {
 		t.pages.HidePage("base")
 		t.CreateModal("ufw is disabled.\nDo you want to enable it?",
 			func() {
