@@ -64,9 +64,10 @@ func main() {
 
 	tui := service.CreateApplication(color)
 	tui.Init()
-	data, err := tui.LoadUFWOutput()
+	rules, err := tui.LoadRules()
 	if err != nil {
-		log.Print(err)
+		log.SetOutput(os.Stderr)
+		log.Fatal(err)
 	}
-	tui.Build(data)
+	tui.Build(rules)
 }
