@@ -3,7 +3,6 @@ package utils
 import (
 	"bytes"
 	"os/exec"
-	"strconv"
 	"strings"
 )
 
@@ -15,21 +14,6 @@ func Shellout(command string) (string, string, error) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
-}
-
-func ValidatePort(text string, ch rune) bool {
-	_, err := strconv.Atoi(text)
-	return err == nil
-}
-
-func ParseInterfaceIndex(input string, interfaces []string) int {
-	for i, interfaceValue := range interfaces {
-		if input == interfaceValue {
-			return i
-		}
-	}
-
-	return 0
 }
 
 // ShellQuote always single-quotes s for bash.
