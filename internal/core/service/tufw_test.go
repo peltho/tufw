@@ -2,14 +2,14 @@ package service
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"strings"
 	"testing"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/peltho/tufw/internal/core/domain"
-	"github.com/rivo/tview"
 )
 
 var fixtureUserRules = `### RULES ###
@@ -63,62 +63,45 @@ func statusNumbered(n int) string {
 	return b.String()
 }
 
-// mockShell records commands; `ufw status numbered` reports statusRules rules.
-func mockShell(t *testing.T, statusRules int) *[]string {
+// mockShell records commands; `ufw status numbered` reports statusRules
+// rules and dry-runs fail with dryRunErr if set.
+func mockShell(t *testing.T, statusRules int, dryRunErr string) *[]string {
 	t.Helper()
 	orig := shellout
 	t.Cleanup(func() { shellout = orig })
 	var commands []string
 	shellout = func(cmd string) (string, string, error) {
 		commands = append(commands, cmd)
-		if cmd == "ufw status numbered" {
+		switch {
+		case cmd == "ufw status numbered":
 			return statusNumbered(statusRules), "", nil
+		case dryRunErr != "" && strings.HasPrefix(cmd, "ufw --dry-run"):
+			return "", dryRunErr, errors.New("exit status 1")
 		}
 		return "", "", nil
 	}
 	return &commands
 }
 
-func newLoadedTui(t *testing.T) *Tui {
+func loadedRules(t *testing.T) []domain.Rule {
 	t.Helper()
-	tui := CreateApplication(tcell.ColorBlue)
-	tui.Init()
-	tui.ReloadTable()
-	return tui
-}
-
-func populateForm(f *tview.Form, v domain.FormValues) {
-	f.Clear(true)
-	f.AddInputField("To", v.To, 10, nil, nil)
-	f.AddInputField("Port", v.Port, 10, nil, nil)
-	f.AddDropDown("Interface", []string{v.Interface}, 0, nil)
-	f.AddDropDown("Interface out", []string{v.InterfaceOut}, 0, nil)
-	f.AddDropDown("Protocol", []string{v.Protocol}, 0, nil)
-	f.AddDropDown("Action *", []string{v.Action}, 0, nil)
-	f.AddInputField("From", v.From, 10, nil, nil)
-	f.AddInputField("Comment", v.Comment, 10, nil, nil)
+	rules, err := New().LoadRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rules
 }
 
 func TestLoadRules(t *testing.T) {
 	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
+	rules := loadedRules(t)
 
 	// 4 v4 rules + 1 v6 app rule
-	if len(tui.rules) != 5 {
-		t.Fatalf("got %d rules, want 5", len(tui.rules))
+	if len(rules) != 5 {
+		t.Fatalf("got %d rules, want 5", len(rules))
 	}
-	if tui.table.GetRowCount() != 6 {
-		t.Errorf("got %d table rows, want 6 (header + 5)", tui.table.GetRowCount())
-	}
-
-	want := []string{"[1]", "192.168.0.1", "22", "tcp", "ALLOW-IN", "Anywhere", "SSH rule"}
-	for c, w := range want {
-		if got := tui.table.GetCell(1, c).Text; got != w {
-			t.Errorf("row 1 col %d: got %q, want %q", c, got, w)
-		}
-	}
-	if got := tui.table.GetCell(3, 2).Text; got != "Apache Full" {
-		t.Errorf("app rule port cell: got %q", got)
+	if rules[0].Comment != "SSH rule" || rules[2].DApp != "Apache Full" || !rules[4].V6 {
+		t.Errorf("unexpected rules: %+v", rules)
 	}
 }
 
@@ -127,38 +110,63 @@ func TestLoadRules_IPv6DisabledAndLegacyPath(t *testing.T) {
 		"/lib/ufw/user.rules": fixtureUserRules,
 		"/etc/default/ufw":    "IPV6=no\n",
 	})
-	tui := CreateApplication(tcell.ColorBlue)
-	rules, err := tui.LoadRules()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rules) != 4 {
+	if rules := loadedRules(t); len(rules) != 4 {
 		t.Errorf("got %d rules, want 4", len(rules))
 	}
 }
 
 func TestLoadRules_MissingFiles(t *testing.T) {
 	mockFiles(t, map[string]string{})
-	tui := CreateApplication(tcell.ColorBlue)
-	if _, err := tui.LoadRules(); err == nil {
+	if _, err := New().LoadRules(); err == nil {
 		t.Error("expected an error when no rules file exists")
 	}
 }
 
-func TestSearch(t *testing.T) {
+func TestFilterRules(t *testing.T) {
 	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
+	rules := loadedRules(t)
 
-	matches, err := tui.LoadSearchData("apache")
-	if err != nil {
-		t.Fatal(err)
-	}
+	matches := FilterRules(rules, "apache")
 	if len(matches) != 2 || matches[0].Number != 3 || matches[1].Number != 5 {
 		t.Errorf("unexpected matches: %+v", matches)
 	}
+	if got := FilterRules(rules, ""); len(got) != 5 {
+		t.Errorf("empty filter should keep everything, got %d", len(got))
+	}
+	// invalid regex falls back to a literal match
+	if got := FilterRules(rules, "[1"); len(got) != 1 || got[0].Number != 1 {
+		t.Errorf("literal fallback: got %+v", got)
+	}
+	if got := FilterRules(rules, "nothing-matches"); got == nil || len(got) != 0 {
+		t.Errorf("expected an empty, non-nil slice, got %#v", got)
+	}
 }
 
-func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
+func TestInterfaces(t *testing.T) {
+	orig := interfaces
+	t.Cleanup(func() { interfaces = orig })
+	interfaces = func() ([]net.Interface, error) {
+		return []net.Interface{{Name: "lo"}, {Name: "eth0"}}, nil
+	}
+	if got := New().Interfaces(); strings.Join(got, ",") != "lo,eth0" {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestIsActive(t *testing.T) {
+	orig := shellout
+	t.Cleanup(func() { shellout = orig })
+	shellout = func(string) (string, string, error) { return "Status: inactive\n", "", nil }
+	if active, err := New().IsActive(); active || err != nil {
+		t.Errorf("got %v, %v", active, err)
+	}
+	shellout = func(string) (string, string, error) { return "Status: active\n", "", nil }
+	if active, err := New().IsActive(); !active || err != nil {
+		t.Errorf("got %v, %v", active, err)
+	}
+}
+
+func TestCreate_BuildsCorrectCommands(t *testing.T) {
 	tests := []struct {
 		name        string
 		values      domain.FormValues
@@ -183,6 +191,11 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 			name:        "forward rule without interfaces",
 			values:      domain.FormValues{To: "1.2.3.4", Action: "ALLOW FWD"},
 			expectedCmd: "ufw route allow from any to 1.2.3.4",
+		},
+		{
+			name:        "interface out ignored for non-route rules",
+			values:      domain.FormValues{To: "1.2.3.4", InterfaceOut: "eth1", Action: "ALLOW IN"},
+			expectedCmd: "ufw allow in from any to 1.2.3.4",
 		},
 		{
 			name:        "deny udp to subnet",
@@ -228,41 +241,46 @@ func TestCreateRule_BuildsCorrectCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockFiles(t, defaultFiles())
-			commands := mockShell(t, 5)
+			commands := mockShell(t, 5, "")
 
-			tui := CreateApplication(tcell.ColorBlue)
-			tui.Init()
-			populateForm(tui.form, tt.values)
-
-			got := tui.CreateRule()
-
-			if len(*commands) != 2 {
-				t.Fatalf("expected dry-run + apply, got %q", *commands)
+			got, err := New().Create(tt.values)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if (*commands)[0] != strings.Replace(tt.expectedCmd, "ufw ", "ufw --dry-run ", 1) {
-				t.Errorf("unexpected dry-run: %s", (*commands)[0])
+
+			want := []string{strings.Replace(tt.expectedCmd, "ufw ", "ufw --dry-run ", 1), tt.expectedCmd}
+			if strings.Join(*commands, "\n") != strings.Join(want, "\n") {
+				t.Errorf("expected:\n%s\ngot:\n%s", strings.Join(want, "\n"), strings.Join(*commands, "\n"))
 			}
-			if (*commands)[1] != tt.expectedCmd || got == nil || *got != tt.expectedCmd {
-				t.Errorf("expected:\n%s\ngot:\n%s", tt.expectedCmd, (*commands)[1])
+			if got != tt.expectedCmd {
+				t.Errorf("returned %q", got)
 			}
 		})
 	}
 }
 
-func TestCreateRule_EmptyFormDoesNothing(t *testing.T) {
-	mockFiles(t, defaultFiles())
-	commands := mockShell(t, 5)
-	tui := CreateApplication(tcell.ColorBlue)
-	tui.Init()
-	populateForm(tui.form, domain.FormValues{Action: "ALLOW IN"})
-
-	if tui.CreateRule() != nil || len(*commands) != 0 {
+func TestCreate_EmptyRule(t *testing.T) {
+	commands := mockShell(t, 5, "")
+	if _, err := New().Create(domain.FormValues{Action: "ALLOW IN"}); !errors.Is(err, ErrEmptyRule) {
+		t.Errorf("got %v", err)
+	}
+	if len(*commands) != 0 {
 		t.Errorf("expected no command, got %q", *commands)
 	}
 }
 
-func TestEditRule(t *testing.T) {
+func TestCreate_InvalidRule(t *testing.T) {
+	commands := mockShell(t, 5, "ERROR: Bad port\n")
+	_, err := New().Create(domain.FormValues{Port: "99999", Action: "ALLOW IN"})
+	if !errors.Is(err, ErrInvalidRule) || !strings.HasSuffix(err.Error(), ": Bad port") {
+		t.Errorf("got %v", err)
+	}
+	if len(*commands) != 1 {
+		t.Errorf("only the dry-run should run, got %q", *commands)
+	}
+}
+
+func TestEdit(t *testing.T) {
 	tests := []struct {
 		name     string
 		number   int
@@ -272,7 +290,7 @@ func TestEditRule(t *testing.T) {
 		{
 			name:   "edit keeps the position",
 			number: 1,
-			values: domain.FormValues{To: "192.168.0.1", Port: "2222", Protocol: "tcp", Action: "allow-in", Comment: "SSH rule"},
+			values: domain.FormValues{To: "192.168.0.1", Port: "2222", Protocol: "tcp", Action: "ALLOW IN", Comment: "SSH rule"},
 			expected: []string{
 				"ufw status numbered",
 				"ufw --dry-run insert 1 allow in from any to 192.168.0.1 proto tcp port 2222 comment 'SSH rule'",
@@ -283,7 +301,7 @@ func TestEditRule(t *testing.T) {
 		{
 			name:   "edit route rule",
 			number: 2,
-			values: domain.FormValues{To: "3.3.3.3", Interface: "enp0s1", InterfaceOut: "eth1", Action: "deny-fwd"},
+			values: domain.FormValues{To: "3.3.3.3", Interface: "enp0s1", InterfaceOut: "eth1", Action: "DENY FWD"},
 			expected: []string{
 				"ufw status numbered",
 				"ufw --dry-run route insert 2 deny in on enp0s1 out on eth1 from any to 3.3.3.3",
@@ -307,42 +325,60 @@ func TestEditRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockFiles(t, defaultFiles())
-			tui := newLoadedTui(t)
-			commands := mockShell(t, 5)
+			rules := loadedRules(t)
+			commands := mockShell(t, 5, "")
 
-			got := tui.EditRule(tui.rules[tt.number-1], tt.values)
-
+			got, err := New().Edit(rules[tt.number-1], tt.values)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if strings.Join(*commands, "\n") != strings.Join(tt.expected, "\n") {
 				t.Errorf("expected commands:\n%s\ngot:\n%s", strings.Join(tt.expected, "\n"), strings.Join(*commands, "\n"))
 			}
-			if got == nil || *got != tt.expected[3] {
-				t.Errorf("unexpected return value %v", got)
+			if got != tt.expected[3] {
+				t.Errorf("returned %q", got)
 			}
 		})
 	}
 }
 
-func TestEditRule_RefusesOnNumberingMismatch(t *testing.T) {
-	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
-	commands := mockShell(t, 4) // ufw disagrees with our 5 rules
-
-	if got := tui.EditRule(tui.rules[0], domain.FormValues{Port: "1", Action: "ALLOW IN"}); got != nil {
-		t.Errorf("expected refusal, got %s", *got)
-	}
-	for _, c := range *commands {
-		if strings.Contains(c, "delete") || strings.Contains(c, "insert") {
+func assertNoModification(t *testing.T, commands []string) {
+	t.Helper()
+	for _, c := range commands {
+		if strings.Contains(c, "delete") || (strings.Contains(c, "insert") && !strings.Contains(c, "--dry-run")) {
 			t.Errorf("no rule should be modified, ran %q", c)
 		}
 	}
 }
 
-func TestDeleteRule(t *testing.T) {
+func TestEdit_RefusesOnNumberingMismatch(t *testing.T) {
 	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
-	commands := mockShell(t, 5)
+	rules := loadedRules(t)
+	commands := mockShell(t, 4, "") // ufw disagrees with our 5 rules
 
-	if err := tui.DeleteRule(tui.rules[2]); err != nil {
+	if _, err := New().Edit(rules[0], domain.FormValues{Port: "1", Action: "ALLOW IN"}); err == nil {
+		t.Error("expected an error")
+	}
+	assertNoModification(t, *commands)
+}
+
+func TestEdit_InvalidRuleKeepsOriginal(t *testing.T) {
+	mockFiles(t, defaultFiles())
+	rules := loadedRules(t)
+	commands := mockShell(t, 5, "ERROR: Bad port\n")
+
+	if _, err := New().Edit(rules[0], domain.FormValues{Port: "99999", Action: "ALLOW IN"}); !errors.Is(err, ErrInvalidRule) {
+		t.Errorf("got %v", err)
+	}
+	assertNoModification(t, *commands)
+}
+
+func TestDelete(t *testing.T) {
+	mockFiles(t, defaultFiles())
+	rules := loadedRules(t)
+	commands := mockShell(t, 5, "")
+
+	if err := New().Delete(rules[2]); err != nil {
 		t.Fatal(err)
 	}
 	if last := (*commands)[len(*commands)-1]; last != "ufw --force delete 3" {
@@ -350,46 +386,41 @@ func TestDeleteRule(t *testing.T) {
 	}
 }
 
-func TestDeleteRule_RefusesWhenRuleChanged(t *testing.T) {
+func TestDelete_RefusesWhenRuleChanged(t *testing.T) {
 	files := defaultFiles()
 	mockFiles(t, files)
-	tui := newLoadedTui(t)
-	selected := tui.rules[0]
+	selected := loadedRules(t)[0]
 
 	// Someone changes rule 1 behind our back
 	files["/etc/ufw/user.rules"] = strings.Replace(fixtureUserRules, "allow tcp 22 192.168.0.1", "allow tcp 23 192.168.0.1", 1)
-	commands := mockShell(t, 5)
+	commands := mockShell(t, 5, "")
 
-	if err := tui.DeleteRule(selected); err == nil {
+	if err := New().Delete(selected); err == nil {
 		t.Error("expected an error")
 	}
-	for _, c := range *commands {
-		if strings.Contains(c, "delete") {
-			t.Errorf("no rule should be deleted, ran %q", c)
-		}
-	}
+	assertNoModification(t, *commands)
 }
 
-func TestDeleteRule_RefusesWhenInactive(t *testing.T) {
+func TestDelete_RefusesWhenInactive(t *testing.T) {
 	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
+	rules := loadedRules(t)
 	orig := shellout
 	t.Cleanup(func() { shellout = orig })
+	var commands []string
 	shellout = func(cmd string) (string, string, error) {
-		if strings.Contains(cmd, "delete") {
-			t.Errorf("no rule should be deleted, ran %q", cmd)
-		}
+		commands = append(commands, cmd)
 		return "Status: inactive\n", "", nil
 	}
 
-	if err := tui.DeleteRule(tui.rules[0]); err == nil {
+	if err := New().Delete(rules[0]); err == nil {
 		t.Error("expected an error")
 	}
+	assertNoModification(t, commands)
 }
 
 func TestRuleToFormValues(t *testing.T) {
 	mockFiles(t, defaultFiles())
-	tui := newLoadedTui(t)
+	rules := loadedRules(t)
 
 	tests := []struct {
 		number int
@@ -403,7 +434,7 @@ func TestRuleToFormValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		fv, err := ruleToFormValues(tui.rules[tt.number-1])
+		fv, err := RuleToFormValues(rules[tt.number-1])
 		if tt.cmd == "" {
 			if err == nil {
 				t.Errorf("rule %d: expected editing to be refused", tt.number)
