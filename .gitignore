@@ -22,3 +22,7 @@ dist/
 # IDE
 .idea/
 .vscode/
+# Added by code-review-graph
+.code-review-graph/
+
+DEV.md

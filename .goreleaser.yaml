@@ -41,3 +41,23 @@ nfpms:
       - rpm
     dependencies:
       - ufw
+aurs:
+  - name: tufw-bin
+    homepage: https://github.com/peltho/tufw
+    description: "Terminal UI for ufw"
+    maintainers:
+      - "Thomas Pellegatta <pellegatta.thomas@gmail.com>"
+    license: MIT
+    depends:
+      - ufw
+    provides:
+      - tufw
+    conflicts:
+      - tufw
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/tufw-bin.git"
+    commit_author:
+      name: Thomas Pellegatta
+      email: pellegatta.thomas@gmail.com
+    package: |-
+      install -Dm755 "./tufw" "${pkgdir}/usr/bin/tufw"
