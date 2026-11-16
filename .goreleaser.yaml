@@ -30,6 +30,11 @@ changelog:
         exclude:
           - '^docs:'
           - '^test:'
+release:
+  # Re-running a release for an existing tag overwrites assets instead of failing with 422 already_exists
+  replace_existing_artifacts: true
+  # Mark tags like v0.3.0-alpha as GitHub pre-releases
+  prerelease: auto
 nfpms:
   - id: packages
     homepage: https://github.com/peltho/tufw
