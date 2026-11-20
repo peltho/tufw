@@ -30,6 +30,11 @@ changelog:
         exclude:
           - '^docs:'
           - '^test:'
+release:
+  # Re-running a release for an existing tag overwrites assets instead of failing with 422 already_exists
+  replace_existing_artifacts: true
+  # Mark tags like v0.3.0-alpha as GitHub pre-releases
+  prerelease: auto
 nfpms:
   - id: packages
     homepage: https://github.com/peltho/tufw
@@ -41,3 +46,23 @@ nfpms:
       - rpm
     dependencies:
       - ufw
+aurs:
+  - name: tufw-bin
+    homepage: https://github.com/peltho/tufw
+    description: "Terminal UI for ufw"
+    maintainers:
+      - "Thomas Pellegatta <pellegatta.thomas@gmail.com>"
+    license: MIT
+    depends:
+      - ufw
+    provides:
+      - tufw
+    conflicts:
+      - tufw
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/tufw-bin.git"
+    commit_author:
+      name: Thomas Pellegatta
+      email: pellegatta.thomas@gmail.com
+    package: |-
+      install -Dm755 "./tufw" "${pkgdir}/usr/bin/tufw"
